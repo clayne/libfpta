@@ -24,7 +24,7 @@
 #include "erthink_defs.h"
 #include "erthink_dynamic_constexpr.h++"
 
-#include <cstring> // for std::strlen, str:memcmp
+#include <cstring> // for std::strlen, std::memcmp, std::memcpy
 
 #if defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L
 #include <string_view>
