@@ -274,7 +274,9 @@
 #define cxx20_constexpr __inline
 #define cxx20_constexpr_var const
 #elif defined(DOXYGEN) ||                                                      \
-    (defined(__cpp_constexpr) && __cpp_constexpr >= 201907L)
+    (defined(__cpp_constexpr) && __cpp_constexpr >= 201907L &&                 \
+     defined(__cpp_lib_constexpr_string) &&                                    \
+     __cpp_lib_constexpr_string >= 201907L)
 #define cxx20_constexpr constexpr
 #define cxx20_constexpr_var constexpr
 #else
