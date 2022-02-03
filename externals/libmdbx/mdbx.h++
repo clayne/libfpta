@@ -1,7 +1,7 @@
 ﻿/// \file mdbx.h++
 /// \brief The libmdbx C++ API header file.
 ///
-/// \author Copyright (c) 2020-2021, Leonid Yuriev <leo@yuriev.ru>.
+/// \author Copyright (c) 2020-2022, Leonid Yuriev <leo@yuriev.ru>.
 /// \copyright SPDX-License-Identifier: Apache-2.0
 ///
 /// Tested with:
@@ -14,6 +14,13 @@
 ///
 
 #pragma once
+
+/* Workaround for modern libstdc++ with CLANG < 4.x */
+#if defined(__SIZEOF_INT128__) && !defined(__GLIBCXX_TYPE_INT_N_0) &&          \
+    defined(__clang__) && __clang_major__ < 4
+#define __GLIBCXX_BITSIZE_INT_N_0 128
+#define __GLIBCXX_TYPE_INT_N_0 __int128
+#endif /* Workaround for modern libstdc++ with CLANG < 4.x */
 
 #if !defined(__cplusplus) || __cplusplus < 201103L
 #if !defined(_MSC_VER) || _MSC_VER < 1900
@@ -195,7 +202,9 @@
 #ifndef MDBX_CXX20_CONCEPT
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || (__clang_major__ >= 12 && !defined(__APPLE__)) || \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
       __clang_major__ >=                                                       \
           /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_CXX20_CONCEPT(CONCEPT, NAME) CONCEPT NAME
@@ -207,7 +216,9 @@
 #ifndef MDBX_ASSERT_CXX20_CONCEPT_SATISFIED
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || (__clang_major__ >= 12 && !defined(__APPLE__)) || \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
       __clang_major__ >=                                                       \
           /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(CONCEPT, TYPE)                     \
@@ -240,11 +251,15 @@ namespace mdbx {
 // Functions whose signature depends on the `mdbx::byte` type
 // must be strictly defined as inline!
 #if defined(DOXYGEN) || (defined(__cpp_char8_t) && __cpp_char8_t >= 201811)
-// Wanna using a non-aliasing type to release more power of an optimizer.
+// To enable all kinds of an compiler optimizations we use a byte-like type
+// that don't presumes aliases for pointers as does the `char` type and its
+// derivatives/typedefs.
+// Please see https://github.com/erthink/libmdbx/issues/263
+// for reasoning of the use of `char8_t` type and switching to `__restrict__`.
 using byte = char8_t;
 #else
-// Wanna not using std::byte since it doesn't add features,
-// but add inconvenient restrictions.
+// Avoid `std::byte` since it doesn't add features but inconvenient
+// restrictions.
 using byte = unsigned char;
 #endif /* __cpp_char8_t >= 201811*/
 
@@ -478,7 +493,9 @@ static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || (__clang_major__ >= 12 && !defined(__APPLE__)) || \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
       __clang_major__ >=                                                       \
           /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 
@@ -1140,6 +1157,11 @@ struct LIBMDBX_API to_hex {
   /// \throws std::length_error if given buffer is too small.
   char *write_bytes(char *dest, size_t dest_size) const;
 
+  /// \brief Output hexadecimal dump of passed slice to the std::ostream.
+  /// \throws std::ios_base::failure corresponding to std::ostream::write()
+  /// behaviour.
+  ::std::ostream &output(::std::ostream &out) const;
+
   /// \brief Checks whether a passed slice is empty,
   /// and therefore there will be no output bytes.
   bool is_empty() const noexcept { return source.empty(); }
@@ -1189,6 +1211,12 @@ struct LIBMDBX_API to_base58 {
   /// \throws std::length_error if given buffer is too small.
   char *write_bytes(char *dest, size_t dest_size) const;
 
+  /// \brief Output [Base58](https://en.wikipedia.org/wiki/Base58)
+  /// dump of passed slice to the std::ostream.
+  /// \throws std::ios_base::failure corresponding to std::ostream::write()
+  /// behaviour.
+  ::std::ostream &output(::std::ostream &out) const;
+
   /// \brief Checks whether a passed slice is empty,
   /// and therefore there will be no output bytes.
   bool is_empty() const noexcept { return source.empty(); }
@@ -1237,6 +1265,12 @@ struct LIBMDBX_API to_base64 {
   /// \throws std::length_error if given buffer is too small.
   char *write_bytes(char *dest, size_t dest_size) const;
 
+  /// \brief Output [Base64](https://en.wikipedia.org/wiki/Base64)
+  /// dump of passed slice to the std::ostream.
+  /// \throws std::ios_base::failure corresponding to std::ostream::write()
+  /// behaviour.
+  ::std::ostream &output(::std::ostream &out) const;
+
   /// \brief Checks whether a passed slice is empty,
   /// and therefore there will be no output bytes.
   bool is_empty() const noexcept { return source.empty(); }
@@ -1246,16 +1280,16 @@ struct LIBMDBX_API to_base64 {
   bool is_erroneous() const noexcept { return false; }
 };
 
-inline ::std::ostream &operator<<(::std::ostream out, const to_hex &wrapper) {
-  return out << wrapper.as_string();
+inline ::std::ostream &operator<<(::std::ostream &out, const to_hex &wrapper) {
+  return wrapper.output(out);
 }
-inline ::std::ostream &operator<<(::std::ostream out,
+inline ::std::ostream &operator<<(::std::ostream &out,
                                   const to_base58 &wrapper) {
-  return out << wrapper.as_string();
+  return wrapper.output(out);
 }
-inline ::std::ostream &operator<<(::std::ostream out,
+inline ::std::ostream &operator<<(::std::ostream &out,
                                   const to_base64 &wrapper) {
-  return out << wrapper.as_string();
+  return wrapper.output(out);
 }
 
 /// \brief Hexadecimal decoder which satisfy \ref SliceTranscoder concept.
@@ -2789,7 +2823,7 @@ enum class value_mode {
 /// \see txn::open_map() \see txn::create_map()
 /// \see txn::clear_map() \see txn::drop_map()
 /// \see txn::get_handle_info() \see txn::get_map_stat()
-/// \see env::close_amp()
+/// \see env::close_map()
 /// \see cursor::map()
 struct LIBMDBX_API_TYPE map_handle {
   MDBX_dbi dbi{0};
@@ -3783,6 +3817,7 @@ public:
                        const slice &key, const slice &value,
                        bool throw_notfound);
     move_result(const move_result &) noexcept = default;
+    move_result &operator=(const move_result &) noexcept = default;
   };
 
 protected:

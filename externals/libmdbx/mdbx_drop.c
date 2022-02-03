@@ -4,7 +4,7 @@
  * Copyright 2021 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  *
- * Copyright 2016-2021 Howard Chu, Symas Corp.
+ * Copyright 2016-2022 Howard Chu, Symas Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,7 +24,7 @@
 
 #define xMDBX_TOOLS /* Avoid using internal mdbx_assert() */
 /*
- * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 0ffd3bf38f658d78dcbdee64238601b334a98ee598125e6a2789f85560e4e5ae_v0_11_3_0_gf836c928
+#define MDBX_BUILD_SOURCERY 5b1d76d568cac4f3471cbc90d8f8146431c2bf30e6fe32ee8271633557381ea1_v0_11_4_1_gf6be8e3e
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -138,9 +138,13 @@
     disable : 4505) /* unreferenced local function has been removed */
 #endif              /* _MSC_VER (warnings) */
 
+#if defined(__GNUC__) && __GNUC__ < 9
+#pragma GCC diagnostic ignored "-Wattributes"
+#endif /* GCC < 9 */
+
 #include "mdbx.h"
 /*
- * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -557,7 +561,7 @@ extern "C" {
 /* https://en.wikipedia.org/wiki/Operating_system_abstraction_layer */
 
 /*
- * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -611,18 +615,21 @@ extern "C" {
 #include <string.h>
 #include <time.h>
 
-/* C11 stdalign.h */
+/* C11' alignas() */
 #if __has_include(<stdalign.h>)
 #include <stdalign.h>
-#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-#define alignas(N) _Alignas(N)
-#elif defined(_MSC_VER)
-#define alignas(N) __declspec(align(N))
-#elif __has_attribute(__aligned__) || defined(__GNUC__)
-#define alignas(N) __attribute__((__aligned__(N)))
-#else
-#error "FIXME: Required _alignas() or equivalent."
 #endif
+#if defined(alignas) || defined(__cplusplus)
+#define MDBX_ALIGNAS(N) alignas(N)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define MDBX_ALIGNAS(N) _Alignas(N)
+#elif defined(_MSC_VER)
+#define MDBX_ALIGNAS(N) __declspec(align(N))
+#elif __has_attribute(__aligned__) || defined(__GNUC__)
+#define MDBX_ALIGNAS(N) __attribute__((__aligned__(N)))
+#else
+#error "FIXME: Required alignas() or equivalent."
+#endif /* MDBX_ALIGNAS */
 
 /*----------------------------------------------------------------------------*/
 /* Systems includes */
@@ -2450,19 +2457,19 @@ typedef struct MDBX_lockinfo {
   /* Marker to distinguish uniqueness of DB/CLK. */
   MDBX_atomic_uint64_t mti_bait_uniqueness;
 
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
 #if MDBX_ENABLE_PGOP_STAT
-      /* Statistics of costly ops of all (running, completed and aborted)
-       * transactions */
-      MDBX_pgop_stat_t mti_pgop_stat;
+  /* Statistics of costly ops of all (running, completed and aborted)
+   * transactions */
+  MDBX_pgop_stat_t mti_pgop_stat;
 #endif /* MDBX_ENABLE_PGOP_STAT*/
 
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
   /* Write transaction lock. */
 #if MDBX_LOCKING > 0
-      mdbx_ipclock_t mti_wlock;
+  mdbx_ipclock_t mti_wlock;
 #endif /* MDBX_LOCKING > 0 */
 
   atomic_txnid_t mti_oldest_reader;
@@ -2484,11 +2491,11 @@ typedef struct MDBX_lockinfo {
   /* Shared anchor for tracking readahead edge and enabled/disabled status. */
   pgno_t mti_readahead_anchor;
 
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
   /* Readeaders registration lock. */
 #if MDBX_LOCKING > 0
-      mdbx_ipclock_t mti_rlock;
+  mdbx_ipclock_t mti_rlock;
 #endif /* MDBX_LOCKING > 0 */
 
   /* The number of slots that have been used in the reader table.
@@ -2499,8 +2506,8 @@ typedef struct MDBX_lockinfo {
 
 #if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) ||              \
     (!defined(__cplusplus) && defined(_MSC_VER))
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
-      MDBX_reader mti_readers[] /* dynamic size */;
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
+  MDBX_reader mti_readers[] /* dynamic size */;
 #endif /* C99 */
 } MDBX_lockinfo;
 
@@ -2545,7 +2552,7 @@ typedef struct MDBX_lockinfo {
 #else
 #define MAX_MAPSIZE32 UINT32_C(0x7f000000)
 #endif
-#define MAX_MAPSIZE64 (MAX_PAGENO * (uint64_t)MAX_PAGESIZE)
+#define MAX_MAPSIZE64 ((MAX_PAGENO + 1) * (uint64_t)MAX_PAGESIZE)
 
 #if MDBX_WORDBITS >= 64
 #define MAX_MAPSIZE MAX_MAPSIZE64
@@ -3306,15 +3313,23 @@ typedef struct MDBX_node {
 #define MDBX_NOSPILL 0x8000
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
-pgno_add(pgno_t base, pgno_t augend) {
-  assert(base <= MAX_PAGENO);
-  return (augend < MAX_PAGENO - base) ? base + augend : MAX_PAGENO;
+int64pgno(int64_t i64) {
+  if (likely(i64 >= (int64_t)MIN_PAGENO && i64 <= (int64_t)MAX_PAGENO + 1))
+    return (pgno_t)i64;
+  return (i64 < (int64_t)MIN_PAGENO) ? MIN_PAGENO : MAX_PAGENO;
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
-pgno_sub(pgno_t base, pgno_t subtrahend) {
-  assert(base >= MIN_PAGENO);
-  return (subtrahend < base - MIN_PAGENO) ? base - subtrahend : MIN_PAGENO;
+pgno_add(size_t base, size_t augend) {
+  assert(base <= MAX_PAGENO + 1 && augend < MAX_PAGENO);
+  return int64pgno(base + augend);
+}
+
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
+pgno_sub(size_t base, size_t subtrahend) {
+  assert(base >= MIN_PAGENO && base <= MAX_PAGENO + 1 &&
+         subtrahend < MAX_PAGENO);
+  return int64pgno(base - subtrahend);
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __always_inline bool
