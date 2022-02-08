@@ -393,7 +393,7 @@ int fpta_transaction_begin(fpta_db *db, fpta_level level, fpta_txn **ptxn) {
     txn->db_version = mdbx_txn_id(txn->mdbx_txn);
     rc = fpta_open_schema(txn);
     if (unlikely(rc != MDBX_SUCCESS))
-      goto bailout;
+      break;
 
     rc = fpta_dbicache_cleanup(txn, nullptr);
     if (likely(rc == FPTA_SUCCESS)) {
