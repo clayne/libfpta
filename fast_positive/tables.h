@@ -298,6 +298,52 @@ typedef struct fpta_cursor fpta_cursor;
 
 //----------------------------------------------------------------------------
 
+/* Уровни логирования */
+enum fpta_log_level_t {
+  /* Critical conditions, i.e. assertion failures */
+  FPTA_LOG_FATAL = 0,
+
+  /* Enables logging for error conditions and FPTA_LOG_FATAL */
+  FPTA_LOG_ERROR = 1,
+
+  /* Enables logging for warning conditions
+   * and FPTA_LOG_ERROR ... FPTA_LOG_FATAL */
+  FPTA_LOG_WARN = 2,
+
+  /* Enables logging for normal but significant condition
+   * and FPTA_LOG_WARN ... FPTA_LOG_FATAL */
+  FPTA_LOG_NOTICE = 3,
+
+  /* Enables logging for verbose informational
+   * and FPTA_LOG_NOTICE ... FPTA_LOG_FATAL */
+  FPTA_LOG_VERBOSE = 4,
+
+  /* Enables logging for debug-level messages
+   * and FPTA_LOG_VERBOSE ... FPTA_LOG_FATAL */
+  FPTA_LOG_DEBUG = 5,
+
+  /* Enables logging for trace debug-level messages
+   * and FPTA_LOG_DEBUG ... FPTA_LOG_FATAL */
+  FPTA_LOG_TRACE = 6,
+
+  /* Enables extra debug-level messages (dump pgno lists)
+   * and all other log-messages */
+  FPTA_LOG_EXTRA = 7
+};
+#ifndef __cplusplus
+typedef enum fpta_log_level_t fpta_log_level_t;
+#endif
+
+/* Тип функции обратного вызова для логирования. */
+typedef void fpta_logger_callback_t(fpta_log_level_t loglevel,
+                                    const char *function, int line,
+                                    const char *fmt,
+                                    va_list args) cxx17_noexcept;
+
+/* Установка логгрера и уровня логирования. */
+FPTA_API void fpta_setup_logger(fpta_logger_callback_t *logger,
+                                fpta_log_level_t loglevel);
+
 /* Коды ошибок. */
 enum fpta_error {
   FPTA_SUCCESS = 0,
