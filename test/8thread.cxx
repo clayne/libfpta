@@ -19,6 +19,8 @@
 #include <functional> // for std::ref
 #include <string>
 
+#include "externals/libmdbx/mdbx.h"
+
 #ifndef STDTHREAD_WORKS
 #if defined(__cpp_lib_jthread) ||                                              \
     (defined(_GLIBCXX_HAS_GTHREADS) &&                                         \
@@ -45,6 +47,24 @@ static std::string random_string(int len, int seed) {
   for (int i = 0; i < len; ++i)
     result.push_back(alphabet[rand() % alphabet.length()]);
   return result;
+}
+
+static int hsr_callback(const MDBX_env *env, const MDBX_txn *txn,
+                        mdbx_pid_t pid, mdbx_tid_t tid, uint64_t laggard,
+                        unsigned gap, size_t space, int retry) noexcept {
+  (void)env;
+  (void)txn;
+  (void)pid;
+  (void)tid;
+  (void)laggard;
+  if (retry < 0)
+    return 0 /* ignore notification about end of retrty-loop */;
+  assert(space > 0);
+  if (gap && space && retry < 1000000) {
+    std::this_thread::yield();
+    return 0 /* retry */;
+  }
+  return -1 /* agree for MDBX_MAP_FULL error */;
 }
 
 //------------------------------------------------------------------------------
@@ -316,6 +336,7 @@ TEST(Threaded, SimpleSelect) {
             test_db_open(testdb_name, fpta_weak, fpta_saferam, 1, false, &db));
   ASSERT_NE(nullptr, db);
   SCOPED_TRACE("Database reopened");
+  ASSERT_EQ(MDBX_SUCCESS, mdbx_env_set_hsr(fpta_mdbx_env(db), hsr_callback));
 
   fpta_txn *txn = nullptr;
   fpta_transaction_begin(db, fpta_write, &txn);
@@ -565,6 +586,7 @@ TEST(Threaded, SimpleVisitor) {
             test_db_open(testdb_name, fpta_weak, fpta_saferam, 1, false, &db));
   ASSERT_NE(nullptr, db);
   SCOPED_TRACE("Database reopened");
+  ASSERT_EQ(MDBX_SUCCESS, mdbx_env_set_hsr(fpta_mdbx_env(db), hsr_callback));
 
 #ifdef CI
   const int reps = 1000;
