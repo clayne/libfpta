@@ -89,6 +89,167 @@ void fpta_cursor_free(fpta_db *db, fpta_cursor *cursor) {
 
 //----------------------------------------------------------------------------
 
+static const char *level2str(const fpta_log_level_t level) {
+  switch (level) {
+  default:
+    return "invalid/unknown";
+  case FPTA_LOG_EXTRA:
+    return "extra";
+  case FPTA_LOG_TRACE:
+    return "trace";
+  case FPTA_LOG_DEBUG:
+    return "debug";
+  case FPTA_LOG_VERBOSE:
+    return "verbose";
+  case FPTA_LOG_NOTICE:
+    return "notice";
+  case FPTA_LOG_WARN:
+    return "warning";
+  case FPTA_LOG_ERROR:
+    return "error";
+  case FPTA_LOG_FATAL:
+    return "fatal";
+  }
+}
+
+static FILE *last /* _filestream */ = stdout;
+
+static bool feed_ap(const char *format, va_list ap) {
+  if (!last)
+    return false;
+
+  if (last == stderr) {
+    va_list ones;
+    va_copy(ones, ap);
+    vfprintf(stdout, format, ones);
+    va_end(ones);
+  }
+  vfprintf(last, format, ap);
+  size_t len = strlen(format);
+  if (len && format[len - 1] == '\n') {
+    fflush(last);
+    if (last == stderr)
+      fflush(stdout);
+    last = nullptr;
+  }
+  return true;
+}
+
+static inline long osal_getpid(void) {
+#if defined(_WIN32) || defined(_WIN64)
+  return GetCurrentProcessId();
+#else
+  return getpid();
+#endif
+}
+
+static void output_nocheckloglevel_ap(const fpta_log_level_t level,
+                                      const char *format, va_list ap) {
+  if (last) {
+    putc('\n', last);
+    fflush(last);
+    if (last == stderr) {
+      putc('\n', stdout);
+      fflush(stdout);
+    }
+    last = nullptr;
+  }
+
+  fptu_time now = fptu_now_fine();
+  struct tm tm;
+#ifdef _MSC_VER
+  int rc = _localtime32_s(&tm, (const __time32_t *)&now.utc);
+#elif defined(_WIN32) || defined(_WIN64)
+  const time_t time_proxy = now.utc;
+  int rc = localtime_s(&tm, &time_proxy);
+#else
+  time_t time = now.utc;
+  int rc = localtime_r(&time, &tm) ? MDBX_SUCCESS : errno;
+#endif
+  if (rc != MDBX_SUCCESS)
+    mdbx_panic("%s:%u localtime_r() failed, %d", __FILE__, __LINE__, rc);
+
+  last = stdout;
+  fprintf(last, "[ %02d%02d%02d-%02d:%02d:%02d.%06d_%05lu %.7s ] ",
+          tm.tm_year - 100, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
+          tm.tm_sec, unsigned(fptu_time::fractional2us(now.fractional)),
+          osal_getpid(), level2str(level));
+
+  va_list ones;
+  memset(&ones, 0, sizeof(ones)) /* zap MSVC and other stupid compilers */;
+  if (level <= FPTA_LOG_ERROR)
+    va_copy(ones, ap);
+  vfprintf(last, format, ap);
+
+  size_t len = strlen(format);
+  char end = len ? format[len - 1] : '\0';
+
+  switch (end) {
+  default:
+    putc('\n', last);
+  // fall through
+  case '\n':
+    fflush(last);
+    last = nullptr;
+  // fall through
+  case ' ':
+  case '_':
+  case ':':
+  case '|':
+  case ',':
+  case '\t':
+  case '\b':
+  case '\r':
+  case '\0':
+    break;
+  }
+
+  if (level <= FPTA_LOG_ERROR) {
+    if (last != stderr) {
+      fprintf(stderr, "[ %05lu %.7s ] ", osal_getpid(), level2str(level));
+      vfprintf(stderr, format, ones);
+      if (end == '\n')
+        fflush(stderr);
+      else
+        last = stderr;
+    }
+    va_end(ones);
+  }
+}
+
+void inline MDBX_PRINTF_ARGS(2, 3)
+    output_nocheckloglevel(fpta_log_level_t level, const char *format, ...) {
+  va_list ap;
+  va_start(ap, format);
+  output_nocheckloglevel_ap(level, format, ap);
+  va_end(ap);
+}
+
+static void fallback_logger(fpta_log_level_t level, const char *function,
+                            int line, const char *fmt,
+                            va_list args) cxx17_noexcept {
+  if (function) {
+    if (level == FPTA_LOG_FATAL)
+      fprintf(stderr, "mdbx: fatal failure: %s, %d", function, line);
+    output_nocheckloglevel(
+        level,
+        strncmp(function, "mdbx_", 5) == 0 ? "%s: " : "mdbx %s: ", function);
+    feed_ap(fmt, args);
+  } else
+    feed_ap(fmt, args);
+}
+
+static fpta_logger_callback_t *global_logger = fallback_logger;
+
+void fpta_setup_logger(fpta_logger_callback_t *logger,
+                       fpta_log_level_t loglevel) {
+  mdbx_setup_debug(MDBX_log_level_t(int(loglevel)), MDBX_DBG_DONTCHANGE,
+                   reinterpret_cast<MDBX_debug_func *>(
+                       global_logger = (logger ? logger : fallback_logger)));
+}
+
+//----------------------------------------------------------------------------
+
 int fpta_db_create_or_open(const char *path, fpta_durability durability,
                            fpta_regime_flags regime_flags,
                            bool alterable_schema, fpta_db **pdb,
@@ -161,13 +322,12 @@ int fpta_db_create_or_open(const char *path, fpta_durability durability,
     return (fpta_error)rc;
   }
 
-  if (unlikely(regime_flags & fpta_madness4testing)) {
-    mdbx_setup_debug(MDBX_LOG_WARN,
-                     MDBX_DBG_ASSERT | MDBX_DBG_AUDIT | MDBX_DBG_DUMP |
-                         MDBX_DBG_LEGACY_MULTIOPEN | MDBX_DBG_JITTER,
-                     reinterpret_cast<MDBX_debug_func *>(
-                         intptr_t(-1 /* means "don't change" */)));
-  }
+  mdbx_setup_debug(MDBX_LOG_DONTCHANGE,
+                   (regime_flags & fpta_madness4testing)
+                       ? MDBX_DBG_ASSERT | MDBX_DBG_AUDIT | MDBX_DBG_DUMP |
+                             MDBX_DBG_LEGACY_MULTIOPEN | MDBX_DBG_JITTER
+                       : MDBX_DBG_DONTCHANGE,
+                   reinterpret_cast<MDBX_debug_func *>(global_logger));
 
   rc = mdbx_env_create(&db->mdbx_env);
   if (unlikely(rc != MDBX_SUCCESS))
