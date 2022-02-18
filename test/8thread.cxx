@@ -23,8 +23,8 @@
 
 #ifndef STDTHREAD_WORKS
 #if defined(__cpp_lib_jthread) ||                                              \
-    (defined(_GLIBCXX_HAS_GTHREADS) &&                                         \
-     (!defined(__clang__) || __clang_major__ > 9))
+    (defined(_GLIBCXX_HAS_GTHREADS) || !defined(__GLIBCXX__)) &&               \
+        (!defined(__clang__) || __clang_major__ > 9))
 #define STDTHREAD_WORKS 1
 #elif __cplusplus >= 201103L && __has_include(<thread>)
 #define STDTHREAD_WORKS 1
