@@ -676,7 +676,7 @@ macro(setup_compile_flags)
 
   # Only add -Werror if it's a debug build, done by developers.
   # Release builds should not cause extra trouble.
-  if(CC_HAS_WERROR)
+  if(CC_HAS_WERROR AND (CI OR CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE STREQUAL "Debug"))
     if(MSVC)
       add_compile_flags("C;CXX" "/WX")
     elseif(CMAKE_COMPILER_IS_CLANG)

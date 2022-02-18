@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 5b1d76d568cac4f3471cbc90d8f8146431c2bf30e6fe32ee8271633557381ea1_v0_11_4_1_gf6be8e3e
+#define MDBX_BUILD_SOURCERY 3324942d7515f285b94e56d8c726b0c94ac72f7402a20327c6e0e366d722c26e_v0_11_4_11_g77f236db
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -1927,17 +1927,29 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #endif /* MDBX_64BIT_CAS */
 
 #ifndef MDBX_UNALIGNED_OK
-#ifdef _MSC_VER
-#define MDBX_UNALIGNED_OK 1 /* avoid MSVC misoptimization */
+#if defined(__ALIGNED__) || defined(__SANITIZE_UNDEFINED__)
+#define MDBX_UNALIGNED_OK 0 /* no unaligned access allowed */
+#elif defined(__ARM_FEATURE_UNALIGNED)
+#define MDBX_UNALIGNED_OK 4 /* ok unaligned for 32-bit words */
 #elif __CLANG_PREREQ(5, 0) || __GNUC_PREREQ(5, 0)
-#define MDBX_UNALIGNED_OK 0 /* expecting optimization is well done */
-#elif (defined(__ia32__) || defined(__ARM_FEATURE_UNALIGNED)) &&               \
-    !defined(__ALIGNED__)
-#define MDBX_UNALIGNED_OK 1
-#else
+/* expecting an optimization will well done, also this
+ * hushes false-positives from UBSAN (undefined behaviour sanitizer) */
 #define MDBX_UNALIGNED_OK 0
+#elif defined(__e2k__) || defined(__elbrus__)
+#if __iset__ > 4
+#define MDBX_UNALIGNED_OK 8 /* ok unaligned for 64-bit words */
+#else
+#define MDBX_UNALIGNED_OK 4 /* ok unaligned for 32-bit words */
 #endif
-#endif /* MDBX_UNALIGNED_OK */
+#elif defined(__ia32__)
+#define MDBX_UNALIGNED_OK 8 /* ok unaligned for 64-bit words */
+#else
+#define MDBX_UNALIGNED_OK 0 /* no unaligned access allowed */
+#endif
+#elif MDBX_UNALIGNED_OK == 1
+#undef MDBX_UNALIGNED_OK
+#define MDBX_UNALIGNED_OK 32 /* any unaligned access allowed */
+#endif                       /* MDBX_UNALIGNED_OK */
 
 #ifndef MDBX_CACHELINE_SIZE
 #if defined(SYSTEM_CACHE_ALIGNMENT_SIZE)
@@ -2226,7 +2238,7 @@ typedef struct MDBX_meta {
 #define MDBX_DATASIGN_WEAK 1u
 #define SIGN_IS_STEADY(sign) ((sign) > MDBX_DATASIGN_WEAK)
 #define META_IS_STEADY(meta)                                                   \
-  SIGN_IS_STEADY(unaligned_peek_u64(4, (meta)->mm_datasync_sign))
+  SIGN_IS_STEADY(unaligned_peek_u64_volatile(4, (meta)->mm_datasync_sign))
   uint32_t mm_datasync_sign[2];
 
   /* txnid that committed this page, the second of a two-phase-update pair */
@@ -3003,25 +3015,21 @@ MDBX_INTERNAL_FUNC void mdbx_debug_log_va(int level, const char *function,
                                           int line, const char *fmt,
                                           va_list args);
 
-#define mdbx_log_enabled(msg) unlikely(msg <= mdbx_loglevel)
-
 #if MDBX_DEBUG
-
-#define mdbx_assert_enabled() unlikely(mdbx_runtime_flags &MDBX_DBG_ASSERT)
-
-#define mdbx_audit_enabled() unlikely(mdbx_runtime_flags &MDBX_DBG_AUDIT)
-
+#define mdbx_log_enabled(msg) unlikely(msg <= mdbx_loglevel)
+#define mdbx_audit_enabled() unlikely((mdbx_runtime_flags & MDBX_DBG_AUDIT))
 #else /* MDBX_DEBUG */
-
+#define mdbx_log_enabled(msg) (msg < MDBX_LOG_VERBOSE && msg <= mdbx_loglevel)
 #define mdbx_audit_enabled() (0)
+#endif /* MDBX_DEBUG */
 
-#if !defined(NDEBUG) || MDBX_FORCE_ASSERTIONS
+#if MDBX_FORCE_ASSERTIONS
 #define mdbx_assert_enabled() (1)
+#elif MDBX_DEBUG
+#define mdbx_assert_enabled() likely((mdbx_runtime_flags & MDBX_DBG_ASSERT))
 #else
 #define mdbx_assert_enabled() (0)
-#endif /* NDEBUG */
-
-#endif /* MDBX_DEBUG */
+#endif /* assertions */
 
 #if !MDBX_DEBUG && defined(__ANDROID_API__)
 #define mdbx_assert_fail(env, msg, func, line)                                 \
@@ -3033,33 +3041,33 @@ void mdbx_assert_fail(const MDBX_env *env, const char *msg, const char *func,
 
 #define mdbx_debug_extra(fmt, ...)                                             \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_EXTRA))                        \
+    if (mdbx_log_enabled(MDBX_LOG_EXTRA))                                      \
       mdbx_debug_log(MDBX_LOG_EXTRA, __func__, __LINE__, fmt, __VA_ARGS__);    \
   } while (0)
 
 #define mdbx_debug_extra_print(fmt, ...)                                       \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_EXTRA))                        \
+    if (mdbx_log_enabled(MDBX_LOG_EXTRA))                                      \
       mdbx_debug_log(MDBX_LOG_EXTRA, NULL, 0, fmt, __VA_ARGS__);               \
   } while (0)
 
 #define mdbx_trace(fmt, ...)                                                   \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_TRACE))                        \
+    if (mdbx_log_enabled(MDBX_LOG_TRACE))                                      \
       mdbx_debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n",             \
                      __VA_ARGS__);                                             \
   } while (0)
 
 #define mdbx_debug(fmt, ...)                                                   \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_DEBUG))                        \
+    if (mdbx_log_enabled(MDBX_LOG_DEBUG))                                      \
       mdbx_debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n",             \
                      __VA_ARGS__);                                             \
   } while (0)
 
 #define mdbx_verbose(fmt, ...)                                                 \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_VERBOSE))                      \
+    if (mdbx_log_enabled(MDBX_LOG_VERBOSE))                                    \
       mdbx_debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n",           \
                      __VA_ARGS__);                                             \
   } while (0)
@@ -4404,8 +4412,8 @@ static void usage(char *prog) {
   exit(EXIT_INTERRUPTED);
 }
 
-static __inline bool meta_ot(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
-                             uint64_t sign_b, const bool wanna_steady) {
+static bool meta_ot(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
+                    uint64_t sign_b, const bool wanna_steady) {
   if (txn_a == txn_b)
     return SIGN_IS_STEADY(sign_b);
 
@@ -4415,8 +4423,8 @@ static __inline bool meta_ot(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
   return txn_a < txn_b;
 }
 
-static __inline bool meta_eq(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
-                             uint64_t sign_b) {
+static bool meta_eq(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
+                    uint64_t sign_b) {
   if (!txn_a || txn_a != txn_b)
     return false;
 
@@ -4426,7 +4434,7 @@ static __inline bool meta_eq(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
   return true;
 }
 
-static __inline int meta_recent(const bool wanna_steady) {
+static int meta_recent(const bool wanna_steady) {
   if (meta_ot(envinfo.mi_meta0_txnid, envinfo.mi_meta0_sign,
               envinfo.mi_meta1_txnid, envinfo.mi_meta1_sign, wanna_steady))
     return meta_ot(envinfo.mi_meta2_txnid, envinfo.mi_meta2_sign,
@@ -4440,7 +4448,7 @@ static __inline int meta_recent(const bool wanna_steady) {
                : 0;
 }
 
-static __inline int meta_tail(int head) {
+static int meta_tail(int head) {
   switch (head) {
   case 0:
     return meta_ot(envinfo.mi_meta1_txnid, envinfo.mi_meta1_sign,
