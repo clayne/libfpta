@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 3324942d7515f285b94e56d8c726b0c94ac72f7402a20327c6e0e366d722c26e_v0_11_4_11_g77f236db
+#define MDBX_BUILD_SOURCERY 6c4d894dab57b371b97f4deffd0943e367692232b8ace053cec44fd1aae843da_v0_11_5_0_gd01e44db
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -16172,6 +16172,22 @@ __cold int mdbx_env_open(MDBX_env *env, const char *pathname,
         goto bailout;
       }
     }
+#elif defined(__linux__) || defined(__gnu_linux__)
+    /* Temporary workaround for Linux 4.19 (at least) kernel's flaw.
+     * See https://github.com/erthink/libmdbx/issues/269 */
+    if ((flags & MDBX_WRITEMAP) == 0 &&
+        mdbx_linux_kernel_version < 0x05040000) {
+      if (flags & MDBX_ACCEDE)
+        flags |= MDBX_WRITEMAP;
+      else {
+        mdbx_debug_log(MDBX_LOG_ERROR, __func__, __LINE__,
+                       "Linux prior to 5.4 requires MDBX_WRITEMAP because "
+                       "of a flaw of unified page/buffer cache. "
+                       "See https://github.com/erthink/libmdbx/issues/269\n");
+        rc = ENOPROTOOPT;
+        goto bailout;
+      }
+    }
 #endif /* MDBX_MMAP_INCOHERENT_FILE_WRITE */
   }
 
@@ -28883,10 +28899,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         11,
-        4,
-        11,
-        {"2022-02-17T02:30:16+03:00", "008e5a591967669fc00b482b06f86c145cd4984f", "77f236db2a25cd38956478b73072b703128fb4e3",
-         "v0.11.4-11-g77f236db"},
+        5,
+        0,
+        {"2022-02-23T20:06:30+03:00", "68aed41e918246f54556dda5cfce00bceaff279b", "d01e44db0ca74724d3d6053807201dc544352c2b",
+         "v0.11.5-0-gd01e44db"},
         sourcery};
 
 __dll_export
