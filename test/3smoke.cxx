@@ -4355,10 +4355,9 @@ public:
     fpta_value order;
     EXPECT_EQ(FPTA_OK, fpta_cursor_get(cursor_guard.get(), &row));
     // Debug("current", row);
-    const auto col =
-        fpta_index_is_primary(index)
-            ? &ro_col_pk
-            : fpta_index_is_unique(index) ? &ro_col_se : &ro_col_order;
+    const auto col = fpta_index_is_primary(index)  ? &ro_col_pk
+                     : fpta_index_is_unique(index) ? &ro_col_se
+                                                   : &ro_col_order;
     EXPECT_EQ(FPTA_OK, fpta_get_column(row, col, &order));
     EXPECT_EQ(fpta_unsigned_int, order.type);
     return (unsigned)order.uint;
