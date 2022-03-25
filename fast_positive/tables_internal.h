@@ -168,7 +168,8 @@ static cxx11_constexpr fpta_index_type fpta_id2index(const fpta_name *id) {
 bool fpta_index_is_valid(const fpta_index_type index_type);
 
 static cxx11_constexpr bool fpta_is_indexed(const fpta_shove_t index) {
-  return (index & (fpta_column_index_mask - fpta_index_fnullable)) != 0;
+  return (index & (fpta_shove_t(fpta_column_index_mask) -
+                   fpta_shove_t(fpta_index_fnullable))) != 0;
 }
 
 static cxx11_constexpr bool fpta_index_is_unique(const fpta_shove_t index) {
@@ -210,7 +211,7 @@ static cxx11_constexpr bool fpta_index_is_ordinal(fpta_shove_t shove) {
 
 static cxx11_constexpr bool
 fpta_is_indexed_and_nullable(const fpta_index_type index) {
-  CONSTEXPR_ASSERT(index == (index & fpta_column_index_mask));
+  CONSTEXPR_ASSERT(size_t(index) == (index & size_t(fpta_column_index_mask)));
   return index > fpta_index_fnullable;
 }
 
