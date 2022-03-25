@@ -1,6 +1,6 @@
 ##
 ##  Fast Positive Tables (libfpta), aka Позитивные Таблицы.
-##  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+##  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
 ##
 ##  Licensed under the Apache License, Version 2.0 (the "License");
 ##  you may not use this file except in compliance with the License.
@@ -96,6 +96,15 @@ target_link_libraries(fpta
   PUBLIC ${LIB_MATH} ${CMAKE_THREAD_LIBS_INIT})
 if(UNIX AND NOT APPLE)
   target_link_libraries(fpta LINK_PUBLIC rt)
+endif()
+
+if(CC_HAS_FASTMATH
+    AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10))
+  target_compile_options(fpta PRIVATE "-ffast-math")
+endif()
+
+if(BUILD_FOR_NATIVE_CPU AND CC_HAS_ARCH_NATIVE)
+  target_compile_options(fpta PUBLIC "-march=native")
 endif()
 
 if(CC_HAS_VISIBILITY)
@@ -240,7 +249,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/version.cxx.in ${CMAKE_CURRENT_BINARY
 
 set(options VERSION C_COMPILER CXX_COMPILER DEFINITIONS BUILD_TARGET BUILD_TYPE
   ENABLE_GCOV ENABLE_GPROF ENABLE_VALGRIND ENABLE_BACKTRACE
-  HAVE_BFD ENABLE_ASAN)
+  HAVE_BFD ENABLE_ASAN ENABLE_UBSAN)
 foreach(option IN LISTS options)
   if(DEFINED "FPTA_${option}")
     set(value "${FPTA_${option}}")
@@ -249,5 +258,5 @@ foreach(option IN LISTS options)
   else()
     set(value "${CMAKE_${option}}")
   endif()
-  find_package_message("FPTA_${option}" "FPTA_${option}: ${value}" "${value}")
+  message(STATUS "FPTA_${option}: ${value}")
 endforeach(option)

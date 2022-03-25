@@ -1,6 +1,6 @@
 ##
 ##  Fast Positive Tables (libfpta), aka Позитивные Таблицы.
-##  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+##  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
 ##
 ##  Licensed under the Apache License, Version 2.0 (the "License");
 ##  you may not use this file except in compliance with the License.
@@ -30,13 +30,31 @@
 ##  до 1.000.000 запросов в секунду на каждое ядро процессора.
 ##
 
-cmake_minimum_required(VERSION 3.8.2)
+if(CMAKE_VERSION VERSION_LESS 3.12)
+  cmake_minimum_required(VERSION 3.8.2)
+else()
+  cmake_minimum_required(VERSION 3.12)
+endif()
+
+cmake_policy(PUSH)
+cmake_policy(VERSION ${CMAKE_MINIMUM_REQUIRED_VERSION})
+
 cmake_policy(SET CMP0054 NEW)
 if(NOT CMAKE_VERSION VERSION_LESS 3.12)
   cmake_policy(SET CMP0075 NEW)
 endif()
+if(NOT CMAKE_VERSION VERSION_LESS 3.9)
+  cmake_policy(SET CMP0069 NEW)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT CMAKE_INTERPROCEDURAL_OPTIMIZATION_AVAILABLE)
+else()
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_AVAILABLE FALSE)
+endif()
 
 project(libfpta C CXX)
+
+# only for compatibility testing
+# set(CMAKE_CXX_STANDARD 14)
 
 if(NOT "$ENV{TEAMCITY_PROCESS_FLOW_ID}" STREQUAL "")
   set(CI TEAMCITY)
@@ -93,14 +111,30 @@ string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPERCASE)
 option(BUILD_SHARED_LIBS "Build shared libraries (DLLs)." ON)
 set(CMAKE_MACOSX_RPATH ON)
 
+include(externals/libfptu/src/erthink/cmake/utils.cmake)
+include(externals/libfptu/src/erthink/cmake/profile.cmake)
+include(externals/libfptu/src/erthink/cmake/compiler.cmake)
+
 list(FIND CMAKE_C_COMPILE_FEATURES c_std_11 HAS_C11)
-list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_17 HAS_CXX17)
-list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_14 HAS_CXX14)
 list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_11 HAS_CXX11)
+list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_14 HAS_CXX14)
+list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_17 HAS_CXX17)
+list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_20 HAS_CXX20)
+list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_23 HAS_CXX23)
 if(NOT DEFINED FPTA_CXX_STANDARD)
-  if(SUBPROJECT AND DEFINED CMAKE_CXX_STANDARD)
+  if(DEFINED ENV{CMAKE_CXX_STANDARD})
+    set(CMAKE_CXX_STANDARD $ENV{CMAKE_CXX_STANDARD})
+  endif()
+  if(DEFINED CMAKE_CXX_STANDARD)
     set(FPTA_CXX_STANDARD ${CMAKE_CXX_STANDARD})
-  elseif(NOT HAS_CXX17 LESS 0)
+  elseif(NOT HAS_CXX23 LESS 0
+      AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12))
+    set(FPTA_CXX_STANDARD 23)
+  elseif(NOT HAS_CXX20 LESS 0
+      AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9))
+    set(FPTA_CXX_STANDARD 20)
+  elseif(NOT HAS_CXX17 LESS 0
+      AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5))
     set(FPTA_CXX_STANDARD 17)
   elseif(NOT HAS_CXX14 LESS 0)
     set(FPTA_CXX_STANDARD 14)
@@ -124,11 +158,6 @@ endif()
 # Define GNU standard installation directories
 include(GNUInstallDirs)
 
-include(externals/libfptu/src/erthink/cmake/utils.cmake)
-# the order is significant: we need to know os and compiler to configure libs
-include(externals/libfptu/src/erthink/cmake/profile.cmake)
-include(externals/libfptu/src/erthink/cmake/compiler.cmake)
-
 if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION LESS 1900)
   message(SEND_ERROR "MSVC compiler ${MSVC_VERSION} is too old for building FPTA."
     "At least 'Microsoft Visual Studio 2015' is required.")
@@ -144,6 +173,10 @@ if((NOT CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 6
   AND (CMAKE_INTERPROCEDURAL_OPTIMIZATION_AVAILABLE
     OR GCC_LTO_AVAILABLE OR MSVC_LTO_AVAILABLE OR CLANG_LTO_AVAILABLE))
   option(INTERPROCEDURAL_OPTIMIZATION "Enable interprocedural/LTO optimization." ${INTERPROCEDURAL_OPTIMIZATION_DEFAULT})
+endif()
+
+if (CC_HAS_ARCH_NATIVE)
+  option(BUILD_FOR_NATIVE_CPU "Generate code for the compiling machine CPU." OFF)
 endif()
 
 option(PROVIDE_VERSIONINFO "Provide library's version information." ON)
@@ -204,10 +237,6 @@ include(externals/libfptu/src/erthink/cmake/testing.cmake)
 
 find_program(GIT git)
 
-check_function_exists(memmem HAVE_MEMMEM)
-check_function_exists(memrchr HAVE_MEMRCHR)
-check_function_exists(uuidgen HAVE_UUIDGEN)
-CHECK_INCLUDE_FILES(unistd.h HAVE_UNISTD_H)
 CHECK_INCLUDE_FILES(sys/uio.h HAVE_SYS_UIO_H)
 CHECK_INCLUDE_FILES(sys/stat.h HAVE_SYS_STAT_H)
 CHECK_STRUCT_HAS_MEMBER("struct timeval" tv_usec sys/time.h HAVE_SYSTIME_H_TIMEVAL_TV_USEC)
@@ -228,14 +257,9 @@ else()
     message(FATAL_ERROR "No libm found for math support")
   endif()
 endif()
-CHECK_SYMBOL_EXISTS(nan math.h HAVE_nan)
-CHECK_SYMBOL_EXISTS(nanf math.h HAVE_nanf)
 CHECK_INCLUDE_FILES(ieee754.h HAVE_IEEE754_H)
 CHECK_INCLUDE_FILES(endian.h HAVE_ENDIAN_H)
-CHECK_INCLUDE_FILES(byteswap.h HAVE_BYTESWAP_H)
 CHECK_INCLUDE_FILES(sys/param.h HAVE_SYS_PARAM_H)
-CHECK_INCLUDE_FILES(netinet/in.h HAVE_NETINET_IN_H)
-CHECK_INCLUDE_FILES(resolv.h HAVE_RESOLV_H)
 
 #
 # Enable 'make tags' target.
@@ -248,11 +272,11 @@ endif(CTAGS)
 
 if(UNIX)
   find_program(CLANG_FORMAT
-    NAMES clang-format-12 clang-format-11 clang-format-10 clang-format)
+    NAMES clang-format-13 clang-format)
   if(CLANG_FORMAT)
     execute_process(COMMAND ${CLANG_FORMAT} "--version" OUTPUT_VARIABLE clang_format_version_info)
     string(REGEX MATCH "version ([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)?" clang_format_version_info CLANG_FORMAT_VERSION)
-    if(clang_format_version_info AND NOT CLANG_FORMAT_VERSION VERSION_LESS 10.0)
+    if(clang_format_version_info AND NOT CLANG_FORMAT_VERSION VERSION_LESS 13.0)
       # Enable 'make reformat' target.
       add_custom_target(reformat
         VERBATIM
@@ -355,3 +379,5 @@ if(HAVE_FPTA_VERSIONINFO)
 else()
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VERSION.txt" "Unknown (no version information)")
 endif()
+
+cmake_policy(POP)

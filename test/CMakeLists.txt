@@ -1,6 +1,6 @@
 ##
 ##  Fast Positive Tables (libfpta), aka Позитивные Таблицы.
-##  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+##  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
 ##
 ##  Licensed under the Apache License, Version 2.0 (the "License");
 ##  you may not use this file except in compliance with the License.
@@ -15,10 +15,18 @@
 ##  limitations under the License.
 ##
 
+include(../externals/libfptu/src/erthink/cmake/std_thread.cmake)
+
 include_directories(${UT_INCLUDE_DIRECTORIES})
 
 if(BUILD_SHARED_LIBS)
   add_definitions("-DGTEST_LINKED_AS_SHARED_LIBRARY=1")
+endif()
+
+if(STDTHREAD_WORKS)
+  add_definitions("-DSTDTHREAD_WORKS=1")
+else()
+  add_definitions("-DSTDTHREAD_WORKS=0")
 endif()
 
 # LY: reduce compilation time (significantly on Elbrus)
@@ -66,12 +74,12 @@ else()
   set(fpta8_crud_timeout 500)
   set(fpta8_select_timeout 100)
   set(fpta8_thread_timeout 250)
-  set(fpta9_huge_timeout 3600)
+  set(fpta9_composite_timeout 8000)
 endif()
 
 add_executable(fpta_c_mode c_mode.c)
 target_link_libraries(fpta_c_mode fpta)
-if(LIBFPTA_TYPE STREQUAL "PILE")
+if(LIBFPTA_TYPE STREQUAL "PILE" OR ENABLE_UBSAN)
   set_target_properties(fpta_c_mode PROPERTIES LINKER_LANGUAGE CXX)
 endif()
 
