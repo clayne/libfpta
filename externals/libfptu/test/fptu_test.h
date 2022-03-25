@@ -1,6 +1,6 @@
 /*
  *  Fast Positive Tuples (libfptu), aka Позитивные Кортежи
- *  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+ *  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,6 +16,13 @@
  */
 
 #pragma once
+
+/* Workaround for modern libstdc++ with CLANG < 4.x */
+#if defined(__SIZEOF_INT128__) && !defined(__GLIBCXX_TYPE_INT_N_0) &&          \
+    defined(__clang__) && __clang_major__ < 4
+#define __GLIBCXX_BITSIZE_INT_N_0 128
+#define __GLIBCXX_TYPE_INT_N_0 __int128
+#endif /* Workaround for modern libstdc++ with CLANG < 4.x */
 
 #ifdef _MSC_VER
 #if !defined(_CRT_SECURE_NO_WARNINGS)
@@ -57,3 +64,48 @@
 #undef SCOPED_TRACE
 #define SCOPED_TRACE(message) __noop()
 #endif /* __LCC__ */
+
+#ifndef GTEST_SKIP
+#define GTEST_SKIP()                                                           \
+  return GTEST_MESSAGE_("Skipped", ::testing::TestPartResult::kSuccess)
+#endif
+
+//----------------------------------------------------------------------------
+
+/* Ограничитель по времени выполнения.
+ * Нужен для предотвращения таумаута тестов в CI. Предполагается, что он
+ * используется вместе с установкой GTEST_SHUFFLE=1, что в сумме дает
+ * выполнение части тестов в случайном порядке, пока не будет превышен лимит
+ * заданный через переменную среды окружения GTEST_RUNTIME_LIMIT. */
+class runtime_limiter {
+  const time_t edge;
+
+  static time_t fetch() {
+    const char *GTEST_RUNTIME_LIMIT = getenv("GTEST_RUNTIME_LIMIT");
+    if (GTEST_RUNTIME_LIMIT) {
+      long limit = atol(GTEST_RUNTIME_LIMIT);
+      if (limit > 0)
+        return time(nullptr) + limit;
+    }
+    return 0;
+  }
+
+public:
+  runtime_limiter() : edge(fetch()) {}
+
+  bool is_timeout() {
+    if (edge && time(nullptr) > edge) {
+      const auto current = ::testing::UnitTest::GetInstance();
+      static const void *last_reported;
+      if (last_reported != current) {
+        last_reported = current;
+        std::cout << "[  SKIPPED ] RUNTIME_LIMIT was reached" << std::endl;
+        GTEST_SKIP() << "SKIPPEND by RUNTIME_LIMIT", true;
+      }
+      return true;
+    }
+    return false;
+  }
+};
+
+#define GTEST_IS_EXECUTION_TIMEOUT() ci_runtime_limiter.is_timeout()

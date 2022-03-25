@@ -1,6 +1,6 @@
 /*
  *  Fast Positive Tuples (libfptu), aka Позитивные Кортежи
- *  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+ *  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -129,11 +129,12 @@ static __hot fptu_takeover_result fptu_takeover(fptu_rw *pt, uint_fast16_t ct,
 static __inline void fptu_cstrcpy(fptu_field *pf, size_t units,
                                   const char *text, size_t length) {
   assert(units > 0);
-  assert(strnlen(text, length) == length);
+  assert(length == 0 || strnlen(text, length) == length);
   assert(bytes2units(length + 1) == units);
   uint32_t *payload = (uint32_t *)fptu_field_payload(pf);
   payload[units - 1] = 0; // clean last unit
-  memcpy(payload, text, length);
+  if (likely(length))
+    memcpy(payload, text, length);
 }
 
 //============================================================================
@@ -173,7 +174,7 @@ static fptu_error fptu_upsert_32(fptu_rw *pt, uint_fast16_t tag,
   if (unlikely(pf == nullptr))
     return FPTU_ENOSPACE;
 
-  fptu_field_payload(pf)->u32 = value;
+  fptu_field_payload(pf)->poke_u32(value);
   return FPTU_SUCCESS;
 }
 
@@ -200,7 +201,7 @@ static fptu_error fptu_upsert_64(fptu_rw *pt, uint_fast16_t tag,
   if (unlikely(pf == nullptr))
     return FPTU_ENOSPACE;
 
-  fptu_field_payload(pf)->u64 = value;
+  fptu_field_payload(pf)->poke_u64(value);
   return FPTU_SUCCESS;
 }
 
@@ -338,12 +339,15 @@ fptu_error fptu_upsert_opaque(fptu_rw *pt, unsigned col, const void *value,
     return FPTU_ENOSPACE;
 
   fptu_payload *payload = fptu_field_payload(pf);
-  payload->other.varlen.brutto = (uint16_t)(units - 1);
-  payload->other.varlen.opaque_bytes = (uint16_t)bytes;
-
-  ((uint32_t *)payload)[units - 1] =
-      0; // clear a padding for rid an `uninitialized` from memory-checkers.
-  memcpy(payload->other.data, value, bytes);
+  // clear a padding for rid an `uninitialized` from memory-checkers.
+  fptu::poke_unaligned(&((uint32_t *)payload)[units - 1], 0u);
+  if (bytes) {
+    fptu::poke_unaligned(&payload->other.varlen.unaligned_netto_units,
+                         uint16_t(units - 1));
+    fptu::poke_unaligned(&payload->other.varlen.unaligned_opaque_bytes,
+                         uint16_t(bytes));
+    memcpy(payload->other.unaligned_data, value, bytes);
+  }
   return FPTU_SUCCESS;
 }
 
@@ -365,7 +369,7 @@ fptu_error fptu_upsert_nested(fptu_rw *pt, unsigned col, fptu_ro ro) {
   if (unlikely(ro.units == nullptr))
     return FPTU_EINVAL;
 
-  size_t units = (size_t)ro.units[0].varlen.brutto + 1;
+  size_t units = ro.units[0].varlen.brutto_units();
   if (unlikely(ro.total_bytes != units2bytes(units)))
     return FPTU_EINVAL;
 
@@ -420,7 +424,7 @@ static fptu_error fptu_update_32(fptu_rw *pt, uint_fast16_t tag,
   fptu_takeover_result result = fptu_takeover(pt, tag, 1);
   if (likely(result.error == FPTU_SUCCESS)) {
     assert(result.pf != nullptr);
-    fptu_field_payload(result.pf)->u32 = value;
+    fptu_field_payload(result.pf)->poke_u32(value);
   }
   return result.error;
 }
@@ -447,7 +451,7 @@ static fptu_error fptu_update_64(fptu_rw *pt, uint_fast16_t tag,
   fptu_takeover_result result = fptu_takeover(pt, tag, 2);
   if (likely(result.error == FPTU_SUCCESS)) {
     assert(result.pf != nullptr);
-    fptu_field_payload(result.pf)->u64 = value;
+    fptu_field_payload(result.pf)->poke_u64(value);
   }
   return result.error;
 }
@@ -587,12 +591,14 @@ fptu_error fptu_update_opaque(fptu_rw *pt, unsigned col, const void *value,
   if (likely(result.error == FPTU_SUCCESS)) {
     assert(result.pf != nullptr);
     fptu_payload *payload = fptu_field_payload(result.pf);
-    payload->other.varlen.brutto = (uint16_t)(units - 1);
-    payload->other.varlen.opaque_bytes = (uint16_t)bytes;
+    fptu::poke_unaligned(&payload->other.varlen.unaligned_netto_units,
+                         uint16_t(units - 1));
+    fptu::poke_unaligned(&payload->other.varlen.unaligned_opaque_bytes,
+                         uint16_t(bytes));
 
-    ((uint32_t *)payload)[units - 1] =
-        0; // clear a padding for rid an `uninitialized` from memory-checkers.
-    memcpy(payload->other.data, value, bytes);
+    // clear a padding for rid an `uninitialized` from memory-checkers.
+    fptu::poke_unaligned(&((uint32_t *)payload)[units - 1], 0u);
+    memcpy(payload->other.unaligned_data, value, bytes);
   }
   return result.error;
 }
@@ -615,7 +621,7 @@ fptu_error fptu_update_nested(fptu_rw *pt, unsigned col, fptu_ro ro) {
   if (unlikely(ro.units == nullptr))
     return FPTU_EINVAL;
 
-  size_t units = (size_t)ro.units[0].varlen.brutto + 1;
+  size_t units = ro.units[0].varlen.brutto_units();
   if (unlikely(ro.total_bytes != units2bytes(units)))
     return FPTU_EINVAL;
 
@@ -654,7 +660,7 @@ static fptu_error fptu_insert_32(fptu_rw *pt, uint_fast16_t tag,
   if (unlikely(pf == nullptr))
     return FPTU_ENOSPACE;
 
-  fptu_field_payload(pf)->u32 = v;
+  fptu_field_payload(pf)->poke_u32(v);
   return FPTU_SUCCESS;
 }
 
@@ -681,7 +687,7 @@ static fptu_error fptu_insert_64(fptu_rw *pt, uint_fast16_t tag,
   if (unlikely(pf == nullptr))
     return FPTU_ENOSPACE;
 
-  fptu_field_payload(pf)->u64 = v;
+  fptu_field_payload(pf)->poke_u64(v);
   return FPTU_SUCCESS;
 }
 
@@ -815,12 +821,14 @@ fptu_error fptu_insert_opaque(fptu_rw *pt, unsigned col, const void *value,
     return FPTU_ENOSPACE;
 
   fptu_payload *payload = fptu_field_payload(pf);
-  payload->other.varlen.brutto = (uint16_t)(units - 1);
-  payload->other.varlen.opaque_bytes = (uint16_t)bytes;
+  fptu::poke_unaligned(&payload->other.varlen.unaligned_netto_units,
+                       uint16_t(units - 1));
+  fptu::poke_unaligned(&payload->other.varlen.unaligned_opaque_bytes,
+                       uint16_t(bytes));
 
-  ((uint32_t *)payload)[units - 1] =
-      0; // clear a padding for rid an `uninitialized` from memory-checkers.
-  memcpy(payload->other.data, value, bytes);
+  // clear a padding for rid an `uninitialized` from memory-checkers.
+  fptu::poke_unaligned(&((uint32_t *)payload)[units - 1], 0u);
+  memcpy(payload->other.unaligned_data, value, bytes);
   return FPTU_SUCCESS;
 }
 
@@ -842,7 +850,7 @@ fptu_error fptu_insert_nested(fptu_rw *pt, unsigned col, fptu_ro ro) {
   if (unlikely(ro.units == nullptr))
     return FPTU_EINVAL;
 
-  size_t units = (size_t)ro.units[0].varlen.brutto + 1;
+  size_t units = ro.units[0].varlen.brutto_units();
   if (unlikely(ro.total_bytes != units2bytes(units)))
     return FPTU_EINVAL;
 

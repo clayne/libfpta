@@ -1,6 +1,6 @@
 /*
  *  Fast Positive Tuples (libfptu), aka Позитивные Кортежи
- *  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+ *  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,6 +16,13 @@
  */
 
 #pragma once
+
+/* Workaround for modern libstdc++ with CLANG < 4.x */
+#if defined(__SIZEOF_INT128__) && !defined(__GLIBCXX_TYPE_INT_N_0) &&          \
+    defined(__clang__) && __clang_major__ < 4
+#define __GLIBCXX_BITSIZE_INT_N_0 128
+#define __GLIBCXX_TYPE_INT_N_0 __int128
+#endif /* Workaround for modern libstdc++ with CLANG < 4.x */
 
 #ifdef _MSC_VER
 #if defined(_MSC_VER)
@@ -255,13 +262,13 @@
 #endif
 #endif /* if_constexpr */
 
-#if !defined(constexpr_assert)
-#if !defined(__cpp_constexpr) || __cpp_constexpr >= 201304L
-#define constexpr_assert(cond) assert(cond)
+#ifndef CONSTEXPR_ASSERT
+#if defined NDEBUG
+#define CONSTEXPR_ASSERT(expr) void(0)
 #else
-#define constexpr_assert(cond)
+#define CONSTEXPR_ASSERT(expr) ((expr) ? void(0) : [] { assert(!#expr); }())
 #endif
-#endif /* constexpr_assert */
+#endif /* CONSTEXPR_ASSERT */
 
 #ifndef NDEBUG_CONSTEXPR
 #ifdef NDEBUG

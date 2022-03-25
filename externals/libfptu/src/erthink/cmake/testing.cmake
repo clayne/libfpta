@@ -1,4 +1,4 @@
-##  Copyright (c) 2012-2021 Leonid Yuriev <leo@yuriev.ru>.
+##  Copyright (c) 2012-2022 Leonid Yuriev <leo@yuriev.ru>.
 ##
 ##  Licensed under the Apache License, Version 2.0 (the "License");
 ##  you may not use this file except in compliance with the License.
@@ -78,6 +78,9 @@ if(BUILD_TESTING)
         set(GTEST_CLONE_TAG "main")
       else()
         set(GTEST_CLONE_TAG "origin/${GTEST_USE_VERSION}")
+      endif()
+      if(NOT DEFINED GTEST_CLONE_URL)
+        set(GTEST_CLONE_URL https://github.com/google/googletest.git)
       endif()
 
       message(STATUS "Not found GoogleTest sources, downloading it...")

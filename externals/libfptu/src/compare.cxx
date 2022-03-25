@@ -1,6 +1,6 @@
 /*
  *  Fast Positive Tuples (libfptu), aka Позитивные Кортежи
- *  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+ *  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -154,7 +154,8 @@ static __inline fptu_lge cmpbin(const void *a, const void *b, size_t bytes) {
 
 fptu_lge __hot fptu_cmp_binary(const void *left_data, size_t left_len,
                                const void *right_data, size_t right_len) {
-  int diff = memcmp(left_data, right_data, std::min(left_len, right_len));
+  size_t shorten = std::min(left_len, right_len);
+  int diff = shorten ? memcmp(left_data, right_data, shorten) : 0;
   if (diff == 0)
     diff = fptu_cmp2int(left_len, right_len);
   return fptu_diff2lge(diff);
@@ -170,6 +171,7 @@ fptu_lge fptu_cmp_96(fptu_ro ro, unsigned column, const uint8_t *value) {
   if (unlikely(pf == nullptr))
     return fptu_ic;
 
+  // coverity[overrun-buffer-arg : FALSE]
   return cmpbin(pf->payload()->fixbin, value, 12);
 }
 
@@ -181,6 +183,7 @@ fptu_lge fptu_cmp_128(fptu_ro ro, unsigned column, const uint8_t *value) {
   if (unlikely(pf == nullptr))
     return fptu_ic;
 
+  // coverity[overrun-buffer-arg : FALSE]
   return cmpbin(pf->payload()->fixbin, value, 16);
 }
 
@@ -192,6 +195,7 @@ fptu_lge fptu_cmp_160(fptu_ro ro, unsigned column, const uint8_t *value) {
   if (unlikely(pf == nullptr))
     return fptu_ic;
 
+  // coverity[overrun-buffer-arg : FALSE]
   return cmpbin(pf->payload()->fixbin, value, 20);
 }
 
@@ -203,6 +207,7 @@ fptu_lge fptu_cmp_256(fptu_ro ro, unsigned column, const uint8_t *value) {
   if (unlikely(pf == nullptr))
     return fptu_ic;
 
+  // coverity[overrun-buffer-arg : FALSE]
   return cmpbin(pf->payload()->fixbin, value, 32);
 }
 
@@ -241,27 +246,31 @@ __hot static fptu_lge fptu_cmp_fields_same_type(const fptu_field *left,
     return fptu_cmp2lge(left->get_payload_uint16(),
                         right->get_payload_uint16());
   case fptu_int32:
-    return fptu_cmp2lge(payload_left->i32, payload_right->i32);
+    return fptu_cmp2lge(payload_left->peek_i32(), payload_right->peek_i32());
   case fptu_uint32:
-    return fptu_cmp2lge(payload_left->u32, payload_right->u32);
+    return fptu_cmp2lge(payload_left->peek_u32(), payload_right->peek_u32());
   case fptu_fp32:
-    return fptu_cmp2lge(payload_left->fp32, payload_right->fp32);
+    return fptu_cmp2lge(payload_left->peek_fp32(), payload_right->peek_fp32());
 
   case fptu_int64:
-    return fptu_cmp2lge(payload_left->i64, payload_right->i64);
+    return fptu_cmp2lge(payload_left->peek_i64(), payload_right->peek_i64());
   case fptu_uint64:
   case fptu_datetime:
-    return fptu_cmp2lge(payload_left->u64, payload_right->u64);
+    return fptu_cmp2lge(payload_left->peek_u64(), payload_right->peek_u64());
   case fptu_fp64:
-    return fptu_cmp2lge(payload_left->fp64, payload_right->fp64);
+    return fptu_cmp2lge(payload_left->peek_fp64(), payload_right->peek_fp64());
 
   case fptu_96:
+    // coverity[overrun-buffer-arg : FALSE]
     return cmpbin(payload_left->fixbin, payload_right->fixbin, 12);
   case fptu_128:
+    // coverity[overrun-buffer-arg : FALSE]
     return cmpbin(payload_left->fixbin, payload_right->fixbin, 16);
   case fptu_160:
+    // coverity[overrun-buffer-arg : FALSE]
     return cmpbin(payload_left->fixbin, payload_right->fixbin, 20);
   case fptu_256:
+    // coverity[overrun-buffer-arg : FALSE]
     return cmpbin(payload_left->fixbin, payload_right->fixbin, 32);
 
   case fptu_cstr:
@@ -269,8 +278,8 @@ __hot static fptu_lge fptu_cmp_fields_same_type(const fptu_field *left,
 
   case fptu_opaque:
     return fptu_cmp_binary(
-        payload_left->other.data, payload_left->other.varlen.opaque_bytes,
-        payload_right->other.data, payload_right->other.varlen.opaque_bytes);
+        payload_left->inner_begin(), payload_left->varlen_opaque_bytes(),
+        payload_right->inner_begin(), payload_right->varlen_opaque_bytes());
 
   case fptu_nested:
     return fptu_cmp_tuples(fptu_field_nested(left), fptu_field_nested(right));
@@ -470,7 +479,8 @@ __hot fptu_lge fptu_cmp_tuples(fptu_ro left, fptu_ro right) {
 #ifdef NDEBUG /* только при выключенной отладке, ради тестирования */
   // fastpath если кортежи полностью равны "как есть"
   if (left.sys.iov_len == right.sys.iov_len &&
-      memcmp(left.sys.iov_base, right.sys.iov_base, left.sys.iov_len) == 0)
+      (left.sys.iov_len == 0 ||
+       memcmp(left.sys.iov_base, right.sys.iov_base, left.sys.iov_len) == 0))
     return fptu_eq;
 #endif /* NDEBUG */
 

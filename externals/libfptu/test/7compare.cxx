@@ -1,6 +1,6 @@
 /*
  *  Fast Positive Tuples (libfptu), aka Позитивные Кортежи
- *  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+ *  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+
+runtime_limiter ci_runtime_limiter;
 
 TEST(Compare, FetchTags) {
   char space[fptu_buffer_enough];
@@ -180,13 +182,8 @@ TEST(Compare, Base) {
   ASSERT_EQ(FPTU_OK, fptu_clear(minor));
 }
 
-#ifdef __OPTIMIZE__
-TEST(Compare, Shuffle)
-#else
 /* LY: Без оптимизации выполняется до 3 минут */
-TEST(Compare, DISABLED_Shuffle)
-#endif
-{
+TEST(Compare, Shuffle) {
   /* Проверка сравнения для разумного количества вариантов наполнения кортежей.
    *
    * Сценарий:
@@ -341,6 +338,10 @@ TEST(Compare, DISABLED_Shuffle)
                  * нескольких итераций.
                  * Поэтому через 42 секунды прекращаем валять дурака. */
                 return;
+
+              const bool skipped = GTEST_IS_EXECUTION_TIMEOUT();
+              if (skipped)
+                break;
             }
           }
         }

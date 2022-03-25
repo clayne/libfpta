@@ -1,6 +1,6 @@
 /*
  *  Fast Positive Tuples (libfptu), aka Позитивные Кортежи
- *  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+ *  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -395,6 +395,7 @@ static __inline fptu_lge fptu_cmp_str_binary(const char *left_cstr,
                                              const void *right_data,
                                              size_t right_len) {
   size_t left_len = left_cstr ? strlen(left_cstr) : 0;
+  // coverity[var_deref_model : FALSE]
   return fptu_cmp_binary(left_cstr, left_len, right_data, right_len);
 }
 

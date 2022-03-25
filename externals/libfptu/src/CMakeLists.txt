@@ -1,6 +1,6 @@
 ##
 ##  Fast Positive Tuples (libfptu), aka Позитивные Кортежи
-##  Copyright 2016-2020 Leonid Yuriev <leo@yuriev.ru>
+##  Copyright 2016-2022 Leonid Yuriev <leo@yuriev.ru>
 ##
 ##  Licensed under the Apache License, Version 2.0 (the "License");
 ##  you may not use this file except in compliance with the License.
@@ -84,8 +84,8 @@ set(LIBFPTU_SOURCES
   sort.cxx
   time.cxx
   data.cxx
-  erthink/erthink_u2a.h
-  erthink/erthink_d2a.h
+  erthink/erthink_u2a.h++
+  erthink/erthink_d2a.h++
   json_emit.cxx
   json_parse.cxx
   ${CMAKE_CURRENT_BINARY_DIR}/version.cxx)
@@ -116,9 +116,22 @@ if(FPTU_CXX_STANDARD)
     CXX_STANDARD ${FPTU_CXX_STANDARD} CXX_STANDARD_REQUIRED ON)
   target_compile_features(fptu INTERFACE "cxx_std_${FPTU_CXX_STANDARD}")
 endif()
-if(FPTU_C_STANDARD)
+list(FIND CMAKE_C_COMPILE_FEATURES c_std_11 HAS_C11)
+if(HAS_C11)
   set_target_properties(${fptu_target} PROPERTIES
-    C_STANDARD ${FPTU_C_STANDARD} C_STANDARD_REQUIRED ON)
+    C_STANDARD 11 C_STANDARD_REQUIRED OFF)
+else()
+  set_target_properties(${fptu_target} PROPERTIES
+    C_STANDARD 99 C_STANDARD_REQUIRED ON)
+endif()
+
+if(CC_HAS_FASTMATH
+    AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10))
+  target_compile_options(${fptu_target} PRIVATE "-ffast-math")
+endif()
+
+if(BUILD_FOR_NATIVE_CPU AND CC_HAS_ARCH_NATIVE)
+  target_compile_options(${fptu_target} PUBLIC "-march=native")
 endif()
 
 if(CC_HAS_VISIBILITY)
@@ -177,8 +190,8 @@ get_target_property(fptu_compile_options ${fptu_target} COMPILE_OPTIONS)
 if(NOT fptu_compile_options)
   set(fptu_compile_options "")
 endif()
-# append cmake's common cxx flags and defines
 
+# append cmake's common cxx flags and defines
 string(REPLACE " " ";" cmake_cxx_options "${CMAKE_CXX_FLAGS}" "${CMAKE_CXX_DEFINES}")
 list(INSERT fptu_compile_options 0 "${cmake_cxx_options}")
 unset(cmake_cxx_options)
@@ -255,7 +268,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/version.cxx.in ${CMAKE_CURRENT_BINARY
 
 set(options VERSION C_COMPILER CXX_COMPILER DEFINITIONS BUILD_TARGET BUILD_TYPE
   ENABLE_GCOV ENABLE_GPROF ENABLE_VALGRIND ENABLE_BACKTRACE
-  HAVE_BFD ENABLE_ASAN)
+  HAVE_BFD ENABLE_ASAN ENABLE_UBSAN)
 foreach(option IN LISTS options)
   if(DEFINED "FPTU_${option}")
     set(value "${FPTU_${option}}")
@@ -264,5 +277,5 @@ foreach(option IN LISTS options)
   else()
     set(value "${CMAKE_${option}}")
   endif()
-  find_package_message("FPTU_${option}" "FPTU_${option}: ${value}" "${value}")
+  message(STATUS "FPTU_${option}: ${value}")
 endforeach(option)

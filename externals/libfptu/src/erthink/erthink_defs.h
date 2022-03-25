@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 1994-2020 Leonid Yuriev <leo@yuriev.ru>.
+ *  Copyright (c) 1994-2022 Leonid Yuriev <leo@yuriev.ru>.
  *  https://github.com/erthink/erthink
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +30,13 @@
                                    mode specified; termination on exception    \
                                    is not guaranteed. Specify /EHsc */
 #endif
+
+/* Workaround for modern libstdc++ with CLANG < 4.x */
+#if defined(__SIZEOF_INT128__) && !defined(__GLIBCXX_TYPE_INT_N_0) &&          \
+    defined(__clang__) && __clang_major__ < 4
+#define __GLIBCXX_BITSIZE_INT_N_0 128
+#define __GLIBCXX_TYPE_INT_N_0 __int128
+#endif /* Workaround for modern libstdc++ with CLANG < 4.x */
 
 #if defined(__KERNEL__) || !defined(__cplusplus) || __cplusplus < 201103L
 #include <assert.h>
@@ -80,31 +87,31 @@
 
 #ifndef __has_attribute
 #define __has_attribute(x) (0)
-#endif
+#endif /* __has_attribute */
+
+#ifndef __has_cpp_attribute
+#define __has_cpp_attribute(x) 0
+#endif /* __has_cpp_attribute */
 
 #ifndef __has_feature
 #define __has_feature(x) (0)
-#endif
+#endif /* __has_feature */
 
 #ifndef __has_extension
 #define __has_extension(x) (0)
-#endif
+#endif /* __has_extension */
 
 #ifndef __has_builtin
 #define __has_builtin(x) (0)
-#endif
+#endif /* __has_builtin */
 
 #ifndef __has_warning
 #define __has_warning(x) (0)
-#endif
+#endif /* __has_warning */
 
 #ifndef __has_include
 #define __has_include(x) (0)
-#endif
-
-#ifndef __has_cpp_attribute
-#define __has_cpp_attribute(x) (0)
-#endif
+#endif /* __has_include */
 
 #if __has_feature(thread_sanitizer)
 #define __SANITIZE_THREAD__ 1
@@ -120,7 +127,7 @@
 
 #if defined(__cplusplus) && __has_include(<version>)
 #include <version>
-#endif
+#endif /* <version> */
 
 //------------------------------------------------------------------------------
 
@@ -199,7 +206,8 @@
 #define cxx01_constexpr __inline
 #define cxx01_constexpr_var const
 #elif !defined(DOXYGEN) &&                                                     \
-    (!defined(__cpp_constexpr) || __cpp_constexpr < 200704L ||                 \
+    ((__cplusplus < 201103L && defined(__cpp_constexpr) &&                     \
+      __cpp_constexpr < 200704L) ||                                            \
      (defined(__LCC__) && __LCC__ < 124) ||                                    \
      (defined(__GNUC__) && (__GNUC__ * 100 + __GNUC_MINOR__ < 407) &&          \
       !defined(__clang__) && !defined(__LCC__)) ||                             \
@@ -218,7 +226,7 @@
 #define cxx11_constexpr __inline
 #define cxx11_constexpr_var const
 #elif !defined(DOXYGEN) &&                                                     \
-    (!defined(__cpp_constexpr) || __cpp_constexpr < 201304 ||                  \
+    (!defined(__cpp_constexpr) || __cpp_constexpr < 201304L ||                 \
      (defined(__LCC__) && __LCC__ < 124) ||                                    \
      (defined(__GNUC__) && __GNUC__ < 6 && !defined(__clang__) &&              \
       !defined(__LCC__)) ||                                                    \
@@ -273,7 +281,9 @@
 #define cxx20_constexpr __inline
 #define cxx20_constexpr_var const
 #elif defined(DOXYGEN) ||                                                      \
-    (defined(__cpp_constexpr) && __cpp_constexpr >= 201907L)
+    (defined(__cpp_constexpr) && __cpp_constexpr >= 201907L &&                 \
+     defined(__cpp_lib_constexpr_string) &&                                    \
+     __cpp_lib_constexpr_string >= 201907L)
 #define cxx20_constexpr constexpr
 #define cxx20_constexpr_var constexpr
 #else
@@ -290,13 +300,13 @@
 #endif
 #endif /* if_constexpr */
 
-#if !defined(constexpr_assert)
-#if !defined(__cpp_constexpr) || __cpp_constexpr >= 201304L
-#define constexpr_assert(cond) assert(cond)
+#ifndef CONSTEXPR_ASSERT
+#if defined NDEBUG
+#define CONSTEXPR_ASSERT(expr) void(0)
 #else
-#define constexpr_assert(cond)
+#define CONSTEXPR_ASSERT(expr) ((expr) ? void(0) : [] { assert(!#expr); }())
 #endif
-#endif /* constexpr_assert */
+#endif /* CONSTEXPR_ASSERT */
 
 #ifndef NDEBUG_CONSTEXPR
 #ifdef NDEBUG
@@ -622,7 +632,7 @@
 static inline void __noop_consume_args() {}
 template <typename First, typename... Rest>
 static inline void __noop_consume_args(const First &first,
-                                       const Rest &... rest) {
+                                       const Rest &...rest) {
   (void)first;
   __noop_consume_args(rest...);
 }
@@ -672,14 +682,41 @@ static __inline void __noop_consume_args(void *anchor, ...) { (void)anchor; }
 #endif
 #endif /* unlikely */
 
+#ifndef constexpr_likely
 #if defined(__cplusplus) && __cplusplus >= 201103L && defined(__LCC__) &&      \
     __LCC__ < 125
 #define constexpr_likely(cond) (cond)
-#define constexpr_unlikely(cond) (cond)
 #else
 #define constexpr_likely(cond) likely(cond)
+#endif
+#endif /* constexpr_likely */
+
+#ifndef constexpr_unlikely
+#if defined(__cplusplus) && __cplusplus >= 201103L && defined(__LCC__) &&      \
+    __LCC__ < 125
+#define constexpr_unlikely(cond) (cond)
+#else
 #define constexpr_unlikely(cond) unlikely(cond)
 #endif
+#endif /* constexpr_unlikely */
+
+#ifndef __cxx20_likely
+#if defined(DOXYGEN) || (__has_cpp_attribute(likely) >= 201803L &&             \
+                         (!defined(__GNUC__) || __GNUC__ > 9))
+#define __cxx20_likely [[likely]]
+#else
+#define __cxx20_likely
+#endif
+#endif /* __cxx20_likely */
+
+#ifndef __cxx20_unlikely
+#if defined(DOXYGEN) || (__has_cpp_attribute(unlikely) >= 201803L &&           \
+                         (!defined(__GNUC__) || __GNUC__ > 9))
+#define __cxx20_unlikely [[unlikely]]
+#else
+#define __cxx20_unlikely
+#endif
+#endif /* __cxx20_unlikely */
 
 #if !defined(alignas) && (!defined(__cplusplus) || __cplusplus < 201103L)
 #if defined(__GNUC__) || defined(__clang__) || __has_attribute(__aligned__)
@@ -720,6 +757,14 @@ static __inline void __noop_consume_args(void *anchor, ...) { (void)anchor; }
 
 //------------------------------------------------------------------------------
 
+#ifndef __nosanitize_enum
+#if __has_attribute(no_sanitize)
+#define __nosanitize_enum __attribute((__no_sanitize__("enum")))
+#else
+#define __nosanitize_enum
+#endif
+#endif /* __nosanitize_enum */
+
 /* Oh, below are some songs and dances since:
  *  - C++ requires explicit definition of the necessary operators.
  *  - the proper implementation of DEFINE_ENUM_FLAG_OPERATORS for C++ required
@@ -739,32 +784,40 @@ static __inline void __noop_consume_args(void *anchor, ...) { (void)anchor; }
 #else
 /* C always allows these operators for enums */
 #define CONSTEXPR_ENUM_FLAGS_OPERATIONS 1
-#endif /* __cpp_constexpr */
+#endif /* CONSTEXPR_ENUM_FLAGS_OPERATIONS */
 
 /// Define operator overloads to enable bit operations on enum values that are
 /// used to define flags (based on Microsoft's DEFINE_ENUM_FLAG_OPERATORS).
 #define DEFINE_ENUM_FLAG_OPERATORS(ENUM)                                       \
   extern "C++" {                                                               \
-  cxx01_constexpr ENUM operator|(ENUM a, ENUM b) {                             \
+  __nosanitize_enum cxx01_constexpr ENUM operator|(ENUM a, ENUM b) {           \
     return ENUM(unsigned(a) | unsigned(b));                                    \
   }                                                                            \
-  cxx14_constexpr ENUM &operator|=(ENUM &a, ENUM b) { return a = a | b; }      \
-  cxx01_constexpr ENUM operator&(ENUM a, ENUM b) {                             \
+  __nosanitize_enum cxx14_constexpr ENUM &operator|=(ENUM &a, ENUM b) {        \
+    return a = a | b;                                                          \
+  }                                                                            \
+  __nosanitize_enum cxx01_constexpr ENUM operator&(ENUM a, ENUM b) {           \
     return ENUM(unsigned(a) & unsigned(b));                                    \
   }                                                                            \
-  cxx01_constexpr ENUM operator&(ENUM a, unsigned b) {                         \
+  __nosanitize_enum cxx01_constexpr ENUM operator&(ENUM a, unsigned b) {       \
     return ENUM(unsigned(a) & b);                                              \
   }                                                                            \
-  cxx01_constexpr ENUM operator&(unsigned a, ENUM b) {                         \
+  __nosanitize_enum cxx01_constexpr ENUM operator&(unsigned a, ENUM b) {       \
     return ENUM(a & unsigned(b));                                              \
   }                                                                            \
-  cxx14_constexpr ENUM &operator&=(ENUM &a, ENUM b) { return a = a & b; }      \
-  cxx14_constexpr ENUM &operator&=(ENUM &a, unsigned b) { return a = a & b; }  \
+  __nosanitize_enum cxx14_constexpr ENUM &operator&=(ENUM &a, ENUM b) {        \
+    return a = a & b;                                                          \
+  }                                                                            \
+  __nosanitize_enum cxx14_constexpr ENUM &operator&=(ENUM &a, unsigned b) {    \
+    return a = a & b;                                                          \
+  }                                                                            \
   cxx01_constexpr unsigned operator~(ENUM a) { return ~unsigned(a); }          \
-  cxx01_constexpr ENUM operator^(ENUM a, ENUM b) {                             \
+  __nosanitize_enum cxx01_constexpr ENUM operator^(ENUM a, ENUM b) {           \
     return ENUM(unsigned(a) ^ unsigned(b));                                    \
   }                                                                            \
-  cxx14_constexpr ENUM &operator^=(ENUM &a, ENUM b) { return a = a ^ b; }      \
+  __nosanitize_enum cxx14_constexpr ENUM &operator^=(ENUM &a, ENUM b) {        \
+    return a = a ^ b;                                                          \
+  }                                                                            \
   }
 #else /* __cplusplus */
 /* nope for C since it always allows these operators for enums */
