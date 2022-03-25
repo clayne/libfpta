@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 6c4d894dab57b371b97f4deffd0943e367692232b8ace053cec44fd1aae843da_v0_11_5_0_gd01e44db
+#define MDBX_BUILD_SOURCERY 7ebe63abaae8610ec036b3dcd4d2f2721ec01402afe3252d5634f893f28ee8e7_v0_11_6_4_ga6b506be
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -2738,6 +2738,7 @@ struct MDBX_txn {
   size_t mt_owner; /* thread ID that owns this transaction */
   MDBX_canary mt_canary;
   void *mt_userctx; /* User-settable context */
+  MDBX_cursor **mt_cursors;
 
   union {
     struct {
@@ -2746,7 +2747,6 @@ struct MDBX_txn {
     } to;
     struct {
       /* In write txns, array of cursors for each DB */
-      MDBX_cursor **cursors;
       pgno_t *reclaimed_pglist; /* Reclaimed GC pages */
       txnid_t last_reclaimed;   /* ID of last used record */
 #if MDBX_ENABLE_REFUND
