@@ -94,11 +94,11 @@
 
 __extern_C int_fast32_t mrand64(void);
 
-#ifdef HAVE_UNISTD_H
-#include <unistd.h>
-#else
+#if defined(_WIN32) || defined(_WIN64)
 static __inline int_fast32_t mrand48(void) { return mrand64(); }
-#endif
+#else
+#include <unistd.h>
+#endif /* Windows */
 
 #include <algorithm>
 #include <cfloat> // for float limits
@@ -123,9 +123,9 @@ extern "C" char *gets(char *);
 
 static cxx11_constexpr fpta_shove_t fpta_column_shove(
     fpta_shove_t shove, fptu_type data_type, fpta_index_type index_type) {
-  constexpr_assert((data_type & ~fpta_column_typeid_mask) == 0);
-  constexpr_assert((index_type & ~fpta_column_index_mask) == 0);
-  constexpr_assert((shove & ((1 << fpta_name_hash_shift) - 1)) == 0);
+  CONSTEXPR_ASSERT((data_type & ~fpta_column_typeid_mask) == 0);
+  CONSTEXPR_ASSERT((index_type & ~fpta_column_index_mask) == 0);
+  CONSTEXPR_ASSERT((shove & ((1 << fpta_name_hash_shift) - 1)) == 0);
   return shove | data_type | index_type;
 }
 
@@ -172,12 +172,12 @@ static cxx11_constexpr bool fpta_is_indexed(const fpta_shove_t index) {
 }
 
 static cxx11_constexpr bool fpta_index_is_unique(const fpta_shove_t index) {
-  constexpr_assert(fpta_is_indexed(index));
+  CONSTEXPR_ASSERT(fpta_is_indexed(index));
   return (index & fpta_index_funique) != 0;
 }
 
 static cxx11_constexpr bool fpta_index_is_ordered(const fpta_shove_t index) {
-  constexpr_assert(fpta_is_indexed(index));
+  CONSTEXPR_ASSERT(fpta_is_indexed(index));
   return (index & fpta_index_fordered) != 0;
 }
 
@@ -194,7 +194,7 @@ static cxx11_constexpr bool fpta_index_is_reverse(const fpta_shove_t index) {
 }
 
 static cxx11_constexpr bool fpta_index_is_primary(const fpta_shove_t index) {
-  constexpr_assert(fpta_is_indexed(index));
+  CONSTEXPR_ASSERT(fpta_is_indexed(index));
   return (index & fpta_index_fsecondary) == 0;
 }
 
@@ -210,7 +210,7 @@ static cxx11_constexpr bool fpta_index_is_ordinal(fpta_shove_t shove) {
 
 static cxx11_constexpr bool
 fpta_is_indexed_and_nullable(const fpta_index_type index) {
-  constexpr_assert(index == (index & fpta_column_index_mask));
+  CONSTEXPR_ASSERT(index == (index & fpta_column_index_mask));
   return index > fpta_index_fnullable;
 }
 
@@ -244,8 +244,8 @@ static cxx11_constexpr bool fpta_is_intersected(const void *left_begin,
                                                 const void *left_end,
                                                 const void *right_begin,
                                                 const void *right_end) {
-  constexpr_assert(left_begin <= left_end);
-  constexpr_assert(right_begin <= right_end);
+  CONSTEXPR_ASSERT(left_begin <= left_end);
+  CONSTEXPR_ASSERT(right_begin <= right_end);
 
   return !(left_begin >= right_end || right_begin >= left_end);
 }
@@ -265,7 +265,7 @@ struct fpta_table_schema final {
   cxx11_constexpr uint64_t version_tsn() const { return _stored.version_tsn; }
   cxx11_constexpr size_t column_count() const { return _stored.count; }
   cxx11_constexpr fpta_shove_t column_shove(size_t number) const {
-    constexpr_assert(number < _stored.count);
+    CONSTEXPR_ASSERT(number < _stored.count);
     return _stored.columns[number];
   }
   cxx11_constexpr const fpta_shove_t *column_shoves_array() const {

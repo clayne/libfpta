@@ -19,7 +19,7 @@
 #include <iomanip>
 #include <sstream>
 
-#include "externals/libfptu/src/erthink/erthink.h"
+#include "externals/libfptu/src/erthink/erthink.h++"
 
 #if defined(_WIN32) || defined(_WIN64)
 #ifdef _MSC_VER

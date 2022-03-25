@@ -40,14 +40,15 @@ static fpta_value fpta_field2value_ex(const fptu_field *field,
   switch (field->type()) {
   default:
   case fptu_nested:
-    result.binary_length = (unsigned)units2bytes(payload->other.varlen.brutto);
-    result.binary_data = (void *)payload->other.data;
+    result.binary_length =
+        unsigned(units2bytes(payload->other.varlen.brutto_units()));
+    result.binary_data = (void *)payload->other.unaligned_data;
     result.type = fpta_binary;
     break;
 
   case fptu_opaque:
-    result.binary_length = payload->other.varlen.opaque_bytes;
-    result.binary_data = (void *)payload->other.data;
+    result.binary_length = unsigned(payload->other.varlen.opaque_bytes());
+    result.binary_data = (void *)payload->other.unaligned_data;
     result.type = fpta_binary;
     break;
 
@@ -69,87 +70,87 @@ static fpta_value fpta_field2value_ex(const fptu_field *field,
   case fptu_int32:
     if (fpta_is_indexed_and_nullable(index)) {
       const int_fast32_t denil = numeric_traits<fptu_int32>::denil(index);
-      if (FPTA_CLEAN_DENIL && unlikely(payload->i32 == denil))
+      if (FPTA_CLEAN_DENIL && unlikely(payload->peek_i32() == denil))
         break;
-      assert(payload->i32 != denil);
+      assert(payload->peek_i32() != denil);
       (void)denil;
     }
     result.type = fpta_signed_int;
-    result.sint = payload->i32;
+    result.sint = payload->peek_i32();
     break;
 
   case fptu_uint32:
     if (fpta_is_indexed_and_nullable(index)) {
       const uint_fast32_t denil = numeric_traits<fptu_uint32>::denil(index);
-      if (FPTA_CLEAN_DENIL && unlikely(payload->u32 == denil))
+      if (FPTA_CLEAN_DENIL && unlikely(payload->peek_u32() == denil))
         break;
-      assert(payload->u32 != denil);
+      assert(payload->peek_u32() != denil);
       (void)denil;
     }
     result.type = fpta_unsigned_int;
-    result.uint = payload->u32;
+    result.uint = payload->peek_u32();
     break;
 
   case fptu_fp32:
     if (fpta_is_indexed_and_nullable(index)) {
       const uint_fast32_t denil = FPTA_DENIL_FP32_BIN;
-      if (FPTA_CLEAN_DENIL && unlikely(payload->u32 == denil))
+      if (FPTA_CLEAN_DENIL && unlikely(payload->peek_u32() == denil))
         break;
       assert(fpta_fp32_denil.__i == FPTA_DENIL_FP32_BIN);
-      assert(binary_ne(payload->fp32, fpta_fp32_denil.__f));
+      assert(binary_ne(payload->peek_fp32(), fpta_fp32_denil.__f));
       (void)denil;
     }
     result.type = fpta_float_point;
-    result.fp = payload->fp32;
+    result.fp = payload->peek_fp32();
     break;
 
   case fptu_int64:
     if (fpta_is_indexed_and_nullable(index)) {
       const int64_t denil = numeric_traits<fptu_int64>::denil(index);
-      if (FPTA_CLEAN_DENIL && unlikely(payload->i64 == denil))
+      if (FPTA_CLEAN_DENIL && unlikely(payload->peek_i64() == denil))
         break;
-      assert(payload->i64 != denil);
+      assert(payload->peek_i64() != denil);
       (void)denil;
     }
     result.type = fpta_signed_int;
-    result.sint = payload->i64;
+    result.sint = payload->peek_i64();
     break;
 
   case fptu_uint64:
     if (fpta_is_indexed_and_nullable(index)) {
       const uint64_t denil = numeric_traits<fptu_uint64>::denil(index);
-      if (FPTA_CLEAN_DENIL && unlikely(payload->u64 == denil))
+      if (FPTA_CLEAN_DENIL && unlikely(payload->peek_u64() == denil))
         break;
-      assert(payload->u64 != denil);
+      assert(payload->peek_u64() != denil);
       (void)denil;
     }
     result.type = fpta_unsigned_int;
-    result.uint = payload->u64;
+    result.uint = payload->peek_u64();
     break;
 
   case fptu_fp64:
     if (fpta_is_indexed_and_nullable(index)) {
       const uint64_t denil = FPTA_DENIL_FP64_BIN;
-      if (FPTA_CLEAN_DENIL && unlikely(payload->u64 == denil))
+      if (FPTA_CLEAN_DENIL && unlikely(payload->peek_u64() == denil))
         break;
       assert(fpta_fp64_denil.__i == FPTA_DENIL_FP64_BIN);
-      assert(binary_ne(payload->fp64, fpta_fp64_denil.__d));
+      assert(binary_ne(payload->peek_fp64(), fpta_fp64_denil.__d));
       (void)denil;
     }
     result.type = fpta_float_point;
-    result.fp = payload->fp64;
+    result.fp = payload->peek_fp64();
     break;
 
   case fptu_datetime:
     if (fpta_is_indexed_and_nullable(index)) {
       const uint64_t denil = FPTA_DENIL_DATETIME_BIN;
-      if (FPTA_CLEAN_DENIL && unlikely(payload->u64 == denil))
+      if (FPTA_CLEAN_DENIL && unlikely(payload->peek_u64() == denil))
         break;
-      assert(payload->u64 != denil);
+      assert(payload->peek_u64() != denil);
       (void)denil;
     }
     result.type = fpta_datetime;
-    result.datetime.fixedpoint = payload->u64;
+    result.datetime.fixedpoint = payload->peek_u64();
     break;
 
   case fptu_96:
@@ -387,7 +388,7 @@ int fpta_upsert_column_ex(fptu_rw *pt, const fpta_name *column_id,
     }
     return fptu_upsert_uint32(pt, colnum, (uint_fast32_t)value.uint);
 
-  case fptu_fp32:
+  case fptu_fp32: {
     if (unlikely(value.type != fpta_float_point))
       return FPTA_ETYPE;
     if (fpta_is_indexed_and_nullable(index) &&
@@ -399,12 +400,15 @@ int fpta_upsert_column_ex(fptu_rw *pt, const fpta_name *column_id,
        * при конвертации во float */
       value.uint = FPTA_QSNAN_FP32x64_BIN;
     }
-    if (unlikely(std::isnan(value.fp))) {
+    const auto fpc(erthink::fpclassify_from_uint(value.uint));
+    if (unlikely(fpc.is_nan())) {
       if (FPTA_PROHIBIT_UPSERT_NAN)
         return FPTA_EVALUE;
-    } else if (unlikely(fabs(value.fp) > FLT_MAX) && !std::isinf(value.fp))
+    } else if (!std::is_same<decltype(value.fp), float>::value &&
+               unlikely(std::abs(value.fp) > FLT_MAX) && !fpc.is_infinity())
       return FPTA_EVALUE;
-    return fptu_upsert_fp32(pt, colnum, (float)value.fp);
+    return fptu_upsert_fp32(pt, colnum, float(value.fp));
+  }
 
   case fptu_int64:
     switch (value.type) {
@@ -440,7 +444,7 @@ int fpta_upsert_column_ex(fptu_rw *pt, const fpta_name *column_id,
     }
     return fptu_upsert_uint64(pt, colnum, value.uint);
 
-  case fptu_fp64:
+  case fptu_fp64: {
     if (unlikely(value.type != fpta_float_point))
       return FPTA_ETYPE;
     if (fpta_is_indexed_and_nullable(index)) {
@@ -448,9 +452,15 @@ int fpta_upsert_column_ex(fptu_rw *pt, const fpta_name *column_id,
       if (unlikely(value.uint == denil))
         goto denil_catched;
     }
-    if (FPTA_PROHIBIT_UPSERT_NAN && unlikely(std::isnan(value.fp)))
+    const auto fpc(erthink::fpclassify_from_uint(value.uint));
+    if (unlikely(fpc.is_nan())) {
+      if (FPTA_PROHIBIT_UPSERT_NAN)
+        return FPTA_EVALUE;
+    } else if (!std::is_same<decltype(value.fp), double>::value &&
+               unlikely(std::abs(value.fp) > DBL_MAX) && !fpc.is_infinity())
       return FPTA_EVALUE;
     return fptu_upsert_fp64(pt, colnum, value.fp);
+  }
 
   case fptu_datetime:
     if (value.type != fpta_datetime)

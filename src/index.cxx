@@ -692,29 +692,24 @@ int fpta_index_value2key(fpta_shove_t shove, const fpta_value &value,
     key.mdbx.iov_base = &key.place.i32;
     return FPTA_SUCCESS;
 
-  case fptu_fp32:
+  case fptu_fp32: {
+    const auto fpc(erthink::fpclassify_from_uint(value.uint));
+    if (unlikely(fpc.is_nan()))
+      return FPTA_EVALUE;
+    if (unlikely(std::abs(value.fp) > FLT_MAX) && !fpc.is_infinity())
+      return FPTA_EVALUE;
+    const float fp = unlikely(std::abs(value.fp) < FLT_MIN)
+                         ? /* -0.0 => 0 */ float(0)
+                         : float(value.fp);
+    if (FPTA_PROHIBIT_LOSS_PRECISION &&
+        !std::is_same<decltype(value.fp), float>::value &&
+        unlikely(value.fp != fp))
+      return FPTA_EVALUE;
     key.mdbx.iov_len = sizeof(key.place.f32);
     key.mdbx.iov_base = &key.place.f32;
-    key.place.f32 = (float)value.fp;
-    switch (std::fpclassify(key.place.f32)) {
-    case FP_INFINITE:
-      if (std::isinf(value.fp))
-        break;
-      __fallthrough;
-    case FP_NAN:
-    default:
-      return FPTA_EVALUE;
-    case FP_SUBNORMAL:
-    case FP_ZERO:
-      key.place.f32 = 0;
-    case FP_NORMAL:
-      break;
-    }
-#if FPTA_PROHIBIT_LOSS_PRECISION
-    if (unlikely(value.fp != key.place.f32))
-      return FPTA_EVALUE;
-#endif
+    key.place.f32 = fp;
     return FPTA_SUCCESS;
+  }
 
   case fptu_int64:
     if (unlikely(value.type == fpta_unsigned_int && value.uint > INT64_MAX))
@@ -732,22 +727,24 @@ int fpta_index_value2key(fpta_shove_t shove, const fpta_value &value,
     key.mdbx.iov_base = &key.place.u64;
     return FPTA_SUCCESS;
 
-  case fptu_fp64:
+  case fptu_fp64: {
+    const auto fpc(erthink::fpclassify_from_uint(value.uint));
+    if (unlikely(fpc.is_nan()))
+      return FPTA_EVALUE;
+    if (unlikely(std::abs(value.fp) > DBL_MAX) && !fpc.is_infinity())
+      return FPTA_EVALUE;
+    const double fp = unlikely(std::abs(value.fp) < DBL_MIN)
+                          ? /* -0.0 => 0 */ double(0)
+                          : double(value.fp);
+    if (FPTA_PROHIBIT_LOSS_PRECISION &&
+        !std::is_same<decltype(value.fp), double>::value &&
+        unlikely(value.fp != fp))
+      return FPTA_EVALUE;
     key.mdbx.iov_len = sizeof(key.place.f64);
     key.mdbx.iov_base = &key.place.f64;
-    key.place.f64 = value.fp;
-    switch (std::fpclassify(key.place.f64)) {
-    case FP_NAN:
-    default:
-      return FPTA_EVALUE;
-    case FP_SUBNORMAL:
-    case FP_ZERO:
-      key.place.f64 = 0;
-    case FP_INFINITE:
-    case FP_NORMAL:
-      break;
-    }
+    key.place.f64 = fp;
     return FPTA_SUCCESS;
+  }
 
   case fptu_datetime:
     assert(value.type == fpta_datetime);
@@ -1078,13 +1075,13 @@ __hot int fpta_index_row2key(const fpta_table_schema *const schema,
 
   default:
     /* TODO: проверить корректность размера для fptu_farray */
-    key.mdbx.iov_len = units2bytes(payload->other.varlen.brutto);
-    key.mdbx.iov_base = (void *)payload->other.data;
+    key.mdbx.iov_len = units2bytes(payload->other.varlen.brutto_units());
+    key.mdbx.iov_base = (void *)payload->other.unaligned_data;
     break;
 
   case fptu_opaque:
-    key.mdbx.iov_len = payload->other.varlen.opaque_bytes;
-    key.mdbx.iov_base = (void *)payload->other.data;
+    key.mdbx.iov_len = payload->other.varlen.opaque_bytes();
+    key.mdbx.iov_base = (void *)payload->other.unaligned_data;
     break;
 
   case fptu_uint16:
@@ -1094,17 +1091,16 @@ __hot int fpta_index_row2key(const fpta_table_schema *const schema,
     return FPTA_SUCCESS;
 
   case fptu_uint32:
-    key.place.u32 = payload->u32;
+    key.place.u32 = payload->peek_u32();
     key.mdbx.iov_len = sizeof(key.place.u32);
     key.mdbx.iov_base = &key.place.u32;
     return FPTA_SUCCESS;
 
   case fptu_datetime:
-    static_assert(sizeof(payload->dt) == sizeof(payload->u64), "WTF?");
-    assert(payload->dt.fixedpoint == payload->u64);
+    assert(payload->peek_dt().fixedpoint == payload->peek_u64());
     __fallthrough;
   case fptu_uint64:
-    key.place.u64 = payload->u64;
+    key.place.u64 = payload->peek_u64();
     key.mdbx.iov_len = sizeof(key.place.u64);
     key.mdbx.iov_base = &key.place.u64;
     return FPTA_SUCCESS;
@@ -1115,7 +1111,7 @@ __hot int fpta_index_row2key(const fpta_table_schema *const schema,
                   "something wrong");
     static_assert(sizeof(key.place.i32) == sizeof(key.place.u32),
                   "something wrong");
-    key.place.u32 = payload->u32;
+    key.place.u32 = payload->peek_u32();
     key.mdbx.iov_len = sizeof(key.place.u32);
     key.mdbx.iov_base = &key.place.u32;
     return FPTA_SUCCESS;
@@ -1126,7 +1122,7 @@ __hot int fpta_index_row2key(const fpta_table_schema *const schema,
                   "something wrong");
     static_assert(sizeof(key.place.i64) == sizeof(key.place.u64),
                   "something wrong");
-    key.place.u64 = payload->u64;
+    key.place.u64 = payload->peek_u64();
     key.mdbx.iov_len = sizeof(key.place.u64);
     key.mdbx.iov_base = &key.place.u64;
     return FPTA_SUCCESS;
