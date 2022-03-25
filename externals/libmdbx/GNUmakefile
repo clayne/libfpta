@@ -31,12 +31,10 @@ CFLAGS_EXTRA ?=
 LD      ?= ld
 MDBX_BUILD_OPTIONS ?=-DNDEBUG=1
 MDBX_BUILD_TIMESTAMP ?=$(shell date +%Y-%m-%dT%H:%M:%S%z)
-CFLAGS  ?= -std=gnu11 -O2 -g -Wall -Werror -Wextra -Wpedantic -ffunction-sections -fPIC -fvisibility=hidden -pthread -Wno-error=attributes $(CFLAGS_EXTRA)
-# -Wno-tautological-compare
-CXX     ?= g++
+CFLAGS  ?= $(strip $(eval CFLAGS := -std=gnu11 -O2 -g -Wall -Werror -Wextra -Wpedantic -ffunction-sections -fPIC -fvisibility=hidden -pthread -Wno-error=attributes $$(shell PROBE=$$$$([ -f mdbx.c ] && echo mdbx.c || echo src/osal.c); for opt in -fno-semantic-interposition -Wno-unused-command-line-argument -Wno-tautological-compare; do [ -z "$$$$($(CC) '-DMDBX_BUILD_FLAGS="probe"' $$$${opt} -c $$$${PROBE} -o /dev/null >/dev/null 2>&1 || echo failed)" ] && echo "$$$${opt} "; done)$(CFLAGS_EXTRA))$(CFLAGS))
 # Choosing C++ standard with deferred simple variable expansion trick
 CXXSTD  ?= $(eval CXXSTD := $$(shell PROBE=$$$$([ -f mdbx.c++ ] && echo mdbx.c++ || echo src/mdbx.c++); for std in gnu++23 c++23 gnu++2b c++2b gnu++20 c++20 gnu++2a c++2a gnu++17 c++17 gnu++1z c++1z gnu++14 c++14 gnu++1y c++1y gnu+11 c++11 gnu++0x c++0x; do $(CXX) -std=$$$${std} -c $$$${PROBE} -o /dev/null 2>std-$$$${std}.err >/dev/null && echo "-std=$$$${std}" && exit; done))$(CXXSTD)
-CXXFLAGS = $(CXXSTD) $(filter-out -std=gnu11,$(CFLAGS))
+CXXFLAGS = $(strip $(CXXSTD) $(filter-out -std=gnu11,$(CFLAGS)))
 
 # TIP: Try append '--no-as-needed,-lrt' for ability to built with modern glibc, but then use with the old.
 LIBS    ?= $(strip -lm $(shell uname | grep -qi SunOS && echo "-lkstat") $(shell uname | grep -qi -e Darwin -e OpenBSD || echo "-lrt") $(shell uname | grep -qi Windows && echo "-lntdll"))
@@ -61,8 +59,8 @@ TOOLS      := mdbx_stat mdbx_copy mdbx_dump mdbx_load mdbx_chk mdbx_drop
 MANPAGES   := mdbx_stat.1 mdbx_copy.1 mdbx_dump.1 mdbx_load.1 mdbx_chk.1 mdbx_drop.1
 TIP        := // TIP:
 
-.PHONY: all help options lib tools clean install uninstall check_buildflags_tag
-.PHONY: install-strip install-no-strip strip libmdbx mdbx show-options
+.PHONY: all help options lib libs tools clean install uninstall check_buildflags_tag
+.PHONY: install-strip install-no-strip strip libmdbx mdbx show-options lib-static lib-shared
 
 ifeq ("$(origin V)", "command line")
   MDBX_BUILD_VERBOSE := $(V)
@@ -87,7 +85,7 @@ help:
 	@echo "  make all                 - build libraries and tools"
 	@echo "  make help                - print this help"
 	@echo "  make options             - list build options"
-	@echo "  make lib                 - build libraries"
+	@echo "  make lib                 - build libraries, also lib-static and lib-shared"
 	@echo "  make tools               - built tools"
 	@echo "  make clean               "
 	@echo "  make install             "
@@ -141,7 +139,7 @@ options:
 	@echo "##   in README and source code (see mdbx.c) if you do."
 	@grep -h '#ifndef MDBX_' mdbx.c | grep -v BUILD | uniq | sed 's/#ifndef /  /'
 
-lib libmdbx mdbx: libmdbx.a libmdbx.$(SO_SUFFIX)
+lib libs libmdbx mdbx: libmdbx.a libmdbx.$(SO_SUFFIX)
 
 tools: $(TOOLS)
 
@@ -165,11 +163,11 @@ check_buildflags_tag:
 
 buildflags.tag: check_buildflags_tag
 
-libmdbx.a: mdbx-static.o mdbx++-static.o
+lib-static libmdbx.a: mdbx-static.o mdbx++-static.o
 	@echo '  AR $@'
 	$(QUIET)$(AR) rcs $@ $? $(HUSH)
 
-libmdbx.$(SO_SUFFIX): mdbx-dylib.o mdbx++-dylib.o
+lib-shared libmdbx.$(SO_SUFFIX): mdbx-dylib.o mdbx++-dylib.o
 	@echo '  LD $@'
 	$(QUIET)$(CXX) $(CXXFLAGS) $^ -pthread -shared $(LDFLAGS) $(LIBS) -o $@
 

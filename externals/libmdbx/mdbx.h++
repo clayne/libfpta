@@ -1,7 +1,7 @@
 ﻿/// \file mdbx.h++
 /// \brief The libmdbx C++ API header file.
 ///
-/// \author Copyright (c) 2020-2021, Leonid Yuriev <leo@yuriev.ru>.
+/// \author Copyright (c) 2020-2022, Leonid Yuriev <leo@yuriev.ru>.
 /// \copyright SPDX-License-Identifier: Apache-2.0
 ///
 /// Tested with:
@@ -14,6 +14,13 @@
 ///
 
 #pragma once
+
+/* Workaround for modern libstdc++ with CLANG < 4.x */
+#if defined(__SIZEOF_INT128__) && !defined(__GLIBCXX_TYPE_INT_N_0) &&          \
+    defined(__clang__) && __clang_major__ < 4
+#define __GLIBCXX_BITSIZE_INT_N_0 128
+#define __GLIBCXX_TYPE_INT_N_0 __int128
+#endif /* Workaround for modern libstdc++ with CLANG < 4.x */
 
 #if !defined(__cplusplus) || __cplusplus < 201103L
 #if !defined(_MSC_VER) || _MSC_VER < 1900
@@ -195,7 +202,9 @@
 #ifndef MDBX_CXX20_CONCEPT
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || (__clang_major__ >= 12 && !defined(__APPLE__)) || \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
       __clang_major__ >=                                                       \
           /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_CXX20_CONCEPT(CONCEPT, NAME) CONCEPT NAME
@@ -207,7 +216,9 @@
 #ifndef MDBX_ASSERT_CXX20_CONCEPT_SATISFIED
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || (__clang_major__ >= 12 && !defined(__APPLE__)) || \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
       __clang_major__ >=                                                       \
           /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(CONCEPT, TYPE)                     \
@@ -240,11 +251,15 @@ namespace mdbx {
 // Functions whose signature depends on the `mdbx::byte` type
 // must be strictly defined as inline!
 #if defined(DOXYGEN) || (defined(__cpp_char8_t) && __cpp_char8_t >= 201811)
-// Wanna using a non-aliasing type to release more power of an optimizer.
+// To enable all kinds of an compiler optimizations we use a byte-like type
+// that don't presumes aliases for pointers as does the `char` type and its
+// derivatives/typedefs.
+// Please see https://github.com/erthink/libmdbx/issues/263
+// for reasoning of the use of `char8_t` type and switching to `__restrict__`.
 using byte = char8_t;
 #else
-// Wanna not using std::byte since it doesn't add features,
-// but add inconvenient restrictions.
+// Avoid `std::byte` since it doesn't add features but inconvenient
+// restrictions.
 using byte = unsigned char;
 #endif /* __cpp_char8_t >= 201811*/
 
@@ -478,7 +493,9 @@ static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || (__clang_major__ >= 12 && !defined(__APPLE__)) || \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
       __clang_major__ >=                                                       \
           /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 
@@ -1140,6 +1157,11 @@ struct LIBMDBX_API to_hex {
   /// \throws std::length_error if given buffer is too small.
   char *write_bytes(char *dest, size_t dest_size) const;
 
+  /// \brief Output hexadecimal dump of passed slice to the std::ostream.
+  /// \throws std::ios_base::failure corresponding to std::ostream::write()
+  /// behaviour.
+  ::std::ostream &output(::std::ostream &out) const;
+
   /// \brief Checks whether a passed slice is empty,
   /// and therefore there will be no output bytes.
   bool is_empty() const noexcept { return source.empty(); }
@@ -1189,6 +1211,12 @@ struct LIBMDBX_API to_base58 {
   /// \throws std::length_error if given buffer is too small.
   char *write_bytes(char *dest, size_t dest_size) const;
 
+  /// \brief Output [Base58](https://en.wikipedia.org/wiki/Base58)
+  /// dump of passed slice to the std::ostream.
+  /// \throws std::ios_base::failure corresponding to std::ostream::write()
+  /// behaviour.
+  ::std::ostream &output(::std::ostream &out) const;
+
   /// \brief Checks whether a passed slice is empty,
   /// and therefore there will be no output bytes.
   bool is_empty() const noexcept { return source.empty(); }
@@ -1237,6 +1265,12 @@ struct LIBMDBX_API to_base64 {
   /// \throws std::length_error if given buffer is too small.
   char *write_bytes(char *dest, size_t dest_size) const;
 
+  /// \brief Output [Base64](https://en.wikipedia.org/wiki/Base64)
+  /// dump of passed slice to the std::ostream.
+  /// \throws std::ios_base::failure corresponding to std::ostream::write()
+  /// behaviour.
+  ::std::ostream &output(::std::ostream &out) const;
+
   /// \brief Checks whether a passed slice is empty,
   /// and therefore there will be no output bytes.
   bool is_empty() const noexcept { return source.empty(); }
@@ -1246,16 +1280,16 @@ struct LIBMDBX_API to_base64 {
   bool is_erroneous() const noexcept { return false; }
 };
 
-inline ::std::ostream &operator<<(::std::ostream out, const to_hex &wrapper) {
-  return out << wrapper.as_string();
+inline ::std::ostream &operator<<(::std::ostream &out, const to_hex &wrapper) {
+  return wrapper.output(out);
 }
-inline ::std::ostream &operator<<(::std::ostream out,
+inline ::std::ostream &operator<<(::std::ostream &out,
                                   const to_base58 &wrapper) {
-  return out << wrapper.as_string();
+  return wrapper.output(out);
 }
-inline ::std::ostream &operator<<(::std::ostream out,
+inline ::std::ostream &operator<<(::std::ostream &out,
                                   const to_base64 &wrapper) {
-  return out << wrapper.as_string();
+  return wrapper.output(out);
 }
 
 /// \brief Hexadecimal decoder which satisfy \ref SliceTranscoder concept.
@@ -2789,7 +2823,7 @@ enum class value_mode {
 /// \see txn::open_map() \see txn::create_map()
 /// \see txn::clear_map() \see txn::drop_map()
 /// \see txn::get_handle_info() \see txn::get_map_stat()
-/// \see env::close_amp()
+/// \see env::close_map()
 /// \see cursor::map()
 struct LIBMDBX_API_TYPE map_handle {
   MDBX_dbi dbi{0};
@@ -2926,6 +2960,18 @@ public:
     inline geometry &make_fixed(intptr_t size) noexcept;
     inline geometry &make_dynamic(intptr_t lower = minimal_value,
                                   intptr_t upper = maximal_value) noexcept;
+    MDBX_CXX11_CONSTEXPR geometry() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    geometry(const geometry &) noexcept = default;
+    MDBX_CXX11_CONSTEXPR geometry(intptr_t size_lower,
+                                  intptr_t size_now = default_value,
+                                  intptr_t size_upper = maximal_value,
+                                  intptr_t growth_step = default_value,
+                                  intptr_t shrink_threshold = default_value,
+                                  intptr_t pagesize = default_value) noexcept
+        : size_lower(size_lower), size_now(size_now), size_upper(size_upper),
+          growth_step(growth_step), shrink_threshold(shrink_threshold),
+          pagesize(pagesize) {}
   };
 
   /// \brief Operation mode.
@@ -2950,6 +2996,10 @@ public:
     /// \copydoc MDBX_COALESCE
     bool coalesce{false};
     MDBX_CXX11_CONSTEXPR reclaiming_options() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    reclaiming_options(const reclaiming_options &) noexcept = default;
+    MDBX_CXX14_CONSTEXPR reclaiming_options &
+    operator=(const reclaiming_options &) noexcept = default;
     reclaiming_options(MDBX_env_flags_t) noexcept;
   };
 
@@ -2965,6 +3015,10 @@ public:
     /// \copydoc MDBX_NOMEMINIT
     bool disable_clear_memory{false};
     MDBX_CXX11_CONSTEXPR operate_options() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    operate_options(const operate_options &) noexcept = default;
+    MDBX_CXX14_CONSTEXPR operate_options &
+    operator=(const operate_options &) noexcept = default;
     operate_options(MDBX_env_flags_t) noexcept;
   };
 
@@ -2982,6 +3036,19 @@ public:
     env::operate_options options;
 
     MDBX_CXX11_CONSTEXPR operate_parameters() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    operate_parameters(
+        const unsigned max_maps, const unsigned max_readers = 0,
+        const env::mode mode = env::mode::write_mapped_io,
+        env::durability durability = env::durability::robust_synchronous,
+        const env::reclaiming_options &reclaiming = env::reclaiming_options(),
+        const env::operate_options &options = env::operate_options()) noexcept
+        : max_maps(max_maps), max_readers(max_readers), mode(mode),
+          durability(durability), reclaiming(reclaiming), options(options) {}
+    MDBX_CXX11_CONSTEXPR
+    operate_parameters(const operate_parameters &) noexcept = default;
+    MDBX_CXX14_CONSTEXPR operate_parameters &
+    operator=(const operate_parameters &) noexcept = default;
     MDBX_env_flags_t
     make_flags(bool accede = true, ///< \copydoc MDBX_ACCEDE
                bool use_subdirectory =
@@ -2993,7 +3060,6 @@ public:
     reclaiming_from_flags(MDBX_env_flags_t flags) noexcept;
     inline static env::operate_options
     options_from_flags(MDBX_env_flags_t flags) noexcept;
-    operate_parameters(const env &);
   };
 
   /// \brief Returns current operation parameters.
@@ -3389,6 +3455,8 @@ public:
     env::geometry geometry;
     mdbx_mode_t file_mode_bits{0640};
     bool use_subdirectory{false};
+    MDBX_CXX11_CONSTEXPR create_parameters() noexcept = default;
+    create_parameters(const create_parameters &) noexcept = default;
   };
 
   /// \brief Create new or open existing database.
@@ -3419,7 +3487,15 @@ public:
   void close(bool dont_sync = false);
 
   env_managed(env_managed &&) = default;
-  env_managed &operator=(env_managed &&) = default;
+  env_managed &operator=(env_managed &&other) {
+    if (MDBX_UNLIKELY(handle_))
+      MDBX_CXX20_UNLIKELY {
+        assert(handle_ != other.handle_);
+        close();
+      }
+    inherited::operator=(std::move(other));
+    return *this;
+  }
   env_managed(const env_managed &) = delete;
   env_managed &operator=(const env_managed &) = delete;
   virtual ~env_managed() noexcept;
@@ -3710,7 +3786,15 @@ class LIBMDBX_API_TYPE txn_managed : public txn {
 public:
   MDBX_CXX11_CONSTEXPR txn_managed() noexcept = default;
   txn_managed(txn_managed &&) = default;
-  txn_managed &operator=(txn_managed &&) = default;
+  txn_managed &operator=(txn_managed &&other) {
+    if (MDBX_UNLIKELY(handle_))
+      MDBX_CXX20_UNLIKELY {
+        assert(handle_ != other.handle_);
+        abort();
+      }
+    inherited::operator=(std::move(other));
+    return *this;
+  }
   txn_managed(const txn_managed &) = delete;
   txn_managed &operator=(const txn_managed &) = delete;
   ~txn_managed() noexcept;
@@ -3783,6 +3867,7 @@ public:
                        const slice &key, const slice &value,
                        bool throw_notfound);
     move_result(const move_result &) noexcept = default;
+    move_result &operator=(const move_result &) noexcept = default;
   };
 
 protected:
@@ -3904,7 +3989,16 @@ public:
   void close();
 
   cursor_managed(cursor_managed &&) = default;
-  cursor_managed &operator=(cursor_managed &&) = default;
+  cursor_managed &operator=(cursor_managed &&other) {
+    if (MDBX_UNLIKELY(handle_))
+      MDBX_CXX20_UNLIKELY {
+        assert(handle_ != other.handle_);
+        close();
+      }
+    inherited::operator=(std::move(other));
+    return *this;
+  }
+
   cursor_managed(const cursor_managed &) = delete;
   cursor_managed &operator=(const cursor_managed &) = delete;
   ~cursor_managed() noexcept { ::mdbx_cursor_close(handle_); }
@@ -4703,7 +4797,12 @@ inline size_t env::limits::transaction_size_max(intptr_t pagesize) {
 }
 
 inline env::operate_parameters env::get_operation_parameters() const {
-  return env::operate_parameters(*this);
+  const auto flags = get_flags();
+  return operate_parameters(max_maps(), max_readers(),
+                            operate_parameters::mode_from_flags(flags),
+                            operate_parameters::durability_from_flags(flags),
+                            operate_parameters::reclaiming_from_flags(flags),
+                            operate_parameters::options_from_flags(flags));
 }
 
 inline env::mode env::get_mode() const {
@@ -5568,7 +5667,7 @@ inline cursor::move_result cursor::move(move_operation operation,
 inline cursor::move_result cursor::find_multivalue(const slice &key,
                                                    const slice &value,
                                                    bool throw_notfound) {
-  return move(key_exact, key, value, throw_notfound);
+  return move(multi_find_pair, key, value, throw_notfound);
 }
 
 inline cursor::move_result cursor::lower_bound_multivalue(const slice &key,
@@ -5759,7 +5858,7 @@ inline bool cursor::erase(const slice &key, bool whole_multivalue) {
 
 inline bool cursor::erase(const slice &key, const slice &value) {
   move_result data = find_multivalue(key, value, false);
-  return data.done ? erase() : data.done;
+  return data.done && erase();
 }
 
 } // namespace mdbx
