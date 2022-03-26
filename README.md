@@ -78,24 +78,22 @@ $ objdump -f -h -j .text libfpta.so
 libfpta.so:     file format elf64-x86-64
 architecture: i386:x86-64, flags 0x00000150:
 HAS_SYMS, DYNAMIC, D_PAGED
-start address 0x000000000000af30
+start address 0x000000000000b3d0
 
 Sections:
 Idx Name          Size      VMA               LMA               File off  Algn
- 11 .text         00048130  000000000000af30  000000000000af30  0000af30  2**4
+ 13 .text         0005eb21  000000000000b3d0  000000000000b3d0  0000b3d0  2**4
                   CONTENTS, ALLOC, LOAD, READONLY, CODE
 ```
 
 ```
 $ ldd libfpta.so
-	linux-vdso.so.1 (0x00007ffc379c3000)
-	libpthread.so.0 => /lib/x86_64-linux-gnu/libpthread.so.0 (0x00007f710092c000)
-	librt.so.1 => /lib/x86_64-linux-gnu/librt.so.1 (0x00007f7100724000)
-	libstdc++.so.6 => /usr/lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007f7100344000)
-	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f70fffa6000)
-	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007f70ffd8e000)
-	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f70ff99d000)
-	/lib64/ld-linux-x86-64.so.2 (0x00007f7100db0000)
+	linux-vdso.so.1 (0x00007fffd2db8000)
+	libstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007faf9e4a7000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007faf9e48d000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007faf9e265000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007faf9e755000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007faf9e181000)
 ```
 
 -----
